@@ -13,7 +13,7 @@
 // El script detecta el cambio y recarga con ?sv=NEW_VERSION, lo que fuerza
 // al navegador a pedir el HTML nuevo (sin usar caché).
 (function(){
-  var SITE_VERSION = 'sv-2026-08-07-scanfix-v82b';
+  var SITE_VERSION = 'sv-2026-08-08-scanner-frame-v83';
   var key = 'monique_site_version';
   var url = new URL(window.location.href);
   var currentSv = url.searchParams.get('sv');
@@ -162,13 +162,9 @@
     <button onclick="closeScanner()" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:0.85rem;cursor:pointer;font-weight:600;">✕ Cerrar</button>
   </div>
   <div id="scanner-container" style="flex:1;width:100%;position:relative;overflow:hidden;"></div>
-  <div id="scanner-result" style="width:100%;padding:16px;background:#fff;box-sizing:border-box;display:none;flex-direction:column;gap:8px;">
+  <div id="scanner-result-card" style="display:none;position:absolute;top:60px;left:50%;transform:translateX(-50%);width:90%;max-width:340px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.4);z-index:10002;overflow:hidden;">
     <div id="scanner-product-info" style="font-size:0.9rem;"></div>
-    <div style="display:flex;gap:8px;margin-top:8px;">
-      <button onclick="closeScanner()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">Cerrar</button>
-      <button id="scanner-again-btn" onclick="restartScanner()" style="flex:1;padding:10px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">Escanear otro</button>
-    </div>
-    <div style="text-align:center;padding:8px;font-size:0.75rem;color:#9ca3af;">Toca cualquier lado para cerrar</div>
+    <div style="text-align:center;padding:6px;font-size:0.75rem;color:#9ca3af;background:#f9fafb;">Toca para escanear otro</div>
   </div>
   <div id="scanner-manual" style="width:100%;padding:10px 16px;background:#374151;box-sizing:border-box;">
     <div style="display:flex;gap:8px;">
@@ -458,7 +454,7 @@
 
   barScan.addEventListener('click', () => {
     document.getElementById('scanner-overlay').style.display = 'flex';
-    document.getElementById('scanner-result').style.display = 'none';
+    var _rc = document.getElementById('scanner-result-card'); if (_rc) _rc.style.display = 'none';
     document.getElementById('scanner-manual-input').value = '';
     // Ensure product data iframe (cuotas) is loaded BEFORE scanning, even if
     // the user never visited "Quiero comprar en cuotas" - otherwise lookups fail silently
@@ -485,35 +481,63 @@
     }
   }
 
+  // Scanner state - keeps camera running between scans
+  let scannerStream = null;
+  let scannerDetector = null;
+  let scannerVideo = null;
+  let scannerDetecting = false;
+
+  // Build the square scanning frame overlay (cuadradito)
+  function buildScannerFrame(container) {
+    return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative;">' +
+      '<video id="scanner-video" style="width:100%;height:100%;object-fit:cover;" autoplay playsinline muted></video>' +
+      // Dark overlay around the frame
+      '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.4);pointer-events:none;"></div>' +
+      // Clear hole in the center (the cuadradito)
+      '<div style="position:relative;width:70%;max-width:280px;aspect-ratio:1/1;background:transparent;box-shadow:0 0 0 9999px rgba(0,0,0,0.4);border-radius:8px;pointer-events:none;">' +
+        // Corner brackets - top left
+        '<div style="position:absolute;top:-2px;left:-2px;width:30px;height:30px;border-top:4px solid #22c55e;border-left:4px solid #22c55e;border-radius:6px 0 0 0;"></div>' +
+        // Top right
+        '<div style="position:absolute;top:-2px;right:-2px;width:30px;height:30px;border-top:4px solid #22c55e;border-right:4px solid #22c55e;border-radius:0 6px 0 0;"></div>' +
+        // Bottom left
+        '<div style="position:absolute;bottom:-2px;left:-2px;width:30px;height:30px;border-bottom:4px solid #22c55e;border-left:4px solid #22c55e;border-radius:0 0 0 6px;"></div>' +
+        // Bottom right
+        '<div style="position:absolute;bottom:-2px;right:-2px;width:30px;height:30px;border-bottom:4px solid #22c55e;border-right:4px solid #22c55e;border-radius:0 0 6px 0;"></div>' +
+        // Scanning line animation
+        '<div style="position:absolute;left:8px;right:8px;top:0;height:3px;background:linear-gradient(90deg,transparent,#22c55e,transparent);box-shadow:0 0 10px #22c55e;animation:scanline 1.5s ease-in-out infinite;"></div>' +
+      '</div>' +
+      // Hint text
+      '<div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);color:#fff;font-size:0.85rem;background:rgba(0,0,0,0.5);padding:6px 16px;border-radius:8px;font-weight:600;">Apunta al codigo de barras</div>' +
+      '<style>@keyframes scanline{0%{top:0}50%{top:calc(100% - 3px)}100%{top:0}}</style>' +
+      '</div>';
+  }
+
   function initHtml5Scanner() {
     const container = document.getElementById('scanner-container');
     
     // Try native BarcodeDetector first (works on newer Chrome/Android)
     if ('BarcodeDetector' in window) {
-      container.innerHTML = '<div style="width:100%;max-width:400px;margin:0 auto;position:relative;">' +
-        '<video id="scanner-video" style="width:100%;border-radius:8px;" autoplay playsinline></video>' +
-        '<div style="position:absolute;inset:50% 20% auto 20%;height:2px;background:#22c55e;box-shadow:0 0 8px #22c55e;"></div>' +
-        '<div style="position:absolute;top:8px;left:8px;right:8px;text-align:center;color:#fff;font-size:0.8rem;background:rgba(0,0,0,0.5);padding:4px;border-radius:6px;">Apunta al codigo de barras</div>' +
-        '</div>';
+      container.innerHTML = buildScannerFrame(container);
       
-      const video = document.getElementById('scanner-video');
-      let scanning = true;
+      scannerVideo = document.getElementById('scanner-video');
+      scannerDetecting = false;
       
       navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         .then(stream => {
-          video.srcObject = stream;
-          video.play();
+          scannerStream = stream;
+          scannerVideo.srcObject = stream;
+          scannerVideo.play();
           
-          const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13', 'ean_8', 'code_39', 'upc_a'] });
+          scannerDetector = new BarcodeDetector({ formats: ['code_128', 'ean_13', 'ean_8', 'code_39', 'upc_a'] });
+          scannerDetecting = true;
           
           function detectLoop() {
-            if (!scanning) return;
-            detector.detect(video)
+            if (!scannerDetecting) return;
+            scannerDetector.detect(scannerVideo)
               .then(barcodes => {
                 if (barcodes && barcodes.length > 0 && !scannerLocked) {
                   scannerLocked = true;
-                  scanning = false;
-                  stream.getTracks().forEach(t => t.stop());
+                  scannerDetecting = false; // Pause detection but keep camera running
                   playBeep();
                   lookupCode(barcodes[0].rawValue);
                   return;
@@ -522,7 +546,7 @@
               })
               .catch(() => requestAnimationFrame(detectLoop));
           }
-          video.addEventListener('loadedmetadata', () => detectLoop());
+          scannerVideo.addEventListener('loadedmetadata', () => detectLoop());
         })
         .catch(e => {
           container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;font-size:0.85rem;text-align:center;padding:20px;gap:8px;">' +
@@ -534,19 +558,23 @@
     }
     
     // Fallback: html5-qrcode library
-    container.innerHTML = '<div id="qr-reader" style="width:100%;max-width:400px;margin:0 auto;"></div>';
+    container.innerHTML = buildScannerFrame(container);
+    // Add qr reader element inside the frame
+    var frameHole = container.querySelector('[style*="aspect-ratio"]');
+    if (frameHole) {
+      frameHole.innerHTML = '<div id="qr-reader" style="width:100%;height:100%;"></div>';
+    }
     try {
       html5QrCode = new Html5Qrcode("qr-reader");
       html5QrCode.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 280, height: 180 } },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
           if (scannerLocked) return;
           scannerLocked = true;
-          html5QrCode.stop().then(() => {
-            playBeep();
-            lookupCode(decodedText);
-          }).catch(() => { playBeep(); lookupCode(decodedText); });
+          scannerDetecting = false;
+          playBeep();
+          lookupCode(decodedText);
         },
         (err) => {}
       ).catch((e) => {
@@ -565,25 +593,52 @@
 
   function closeScanner() {
     scannerLocked = false;
+    scannerDetecting = false;
     if (html5QrCode) {
       try { html5QrCode.stop().catch(()=>{}); } catch(e) {}
       html5QrCode = null;
     }
-    // Also stop native video stream if active
-    var video = document.getElementById('scanner-video');
-    if (video && video.srcObject) {
-      video.srcObject.getTracks().forEach(t => t.stop());
-      video.srcObject = null;
+    // Stop native video stream if active
+    if (scannerStream) {
+      scannerStream.getTracks().forEach(t => t.stop());
+      scannerStream = null;
     }
+    scannerDetector = null;
+    scannerVideo = null;
+    // Hide result card
+    var resultCard = document.getElementById('scanner-result-card');
+    if (resultCard) resultCard.style.display = 'none';
     document.getElementById('scanner-overlay').style.display = 'none';
     document.getElementById('scanner-container').innerHTML = '';
   }
 
   function restartScanner() {
     scannerLocked = false;
-    document.getElementById('scanner-result').style.display = 'none';
+    var resultCard = document.getElementById('scanner-result-card');
+    if (resultCard) resultCard.style.display = 'none';
     document.getElementById('scanner-manual-input').value = '';
-    startScanner();
+    // Resume detection on existing camera (don't restart camera)
+    if (scannerStream && scannerDetector && scannerVideo) {
+      scannerDetecting = true;
+      (function detectLoop() {
+        if (!scannerDetecting) return;
+        scannerDetector.detect(scannerVideo)
+          .then(barcodes => {
+            if (barcodes && barcodes.length > 0 && !scannerLocked) {
+              scannerLocked = true;
+              scannerDetecting = false;
+              playBeep();
+              lookupCode(barcodes[0].rawValue);
+              return;
+            }
+            requestAnimationFrame(detectLoop);
+          })
+          .catch(() => requestAnimationFrame(detectLoop));
+      })();
+    } else {
+      // Camera was stopped, restart from scratch
+      startScanner();
+    }
   }
 
   function lookupCode(code) {
@@ -630,48 +685,48 @@
   });
 
   function showScannerResult(product, source) {
-    const resultDiv = document.getElementById('scanner-result');
+    const resultCard = document.getElementById('scanner-result-card');
     const infoDiv = document.getElementById('scanner-product-info');
     if (product && product.name && product.price > 0) {
-      var cuotaText = product.cuota ? '<div style="background:#f3e8ff;color:#7c3aed;padding:8px 12px;border-radius:8px;margin-top:8px;text-align:center;font-weight:600;">2 cuotas de $' + product.cuota + '</div>' : '';
+      var cuotaText = product.cuota ? '<div style="background:#f3e8ff;color:#7c3aed;padding:6px 10px;border-radius:6px;margin-top:6px;text-align:center;font-weight:600;font-size:0.8rem;">2 cuotas de $' + product.cuota + '</div>' : '';
       var stockColor = product.stock > 0 ? '#059669' : '#dc2626';
       var stockBg = product.stock > 0 ? '#ecfdf5' : '#fee2e2';
       var stockText = product.stock > 0 ? ('\u2705 ' + product.stock + ' disponible' + (product.stock > 1 ? 's' : '')) : '\u274c Sin stock';
-      var imgHtml = product.image ? '<div style="width:100%;max-height:180px;overflow:hidden;background:#f9fafb;display:flex;align-items:center;justify-content:center;"><img src="' + product.image + '" style="max-width:100%;max-height:180px;object-fit:contain;"></div>' : '';
-      infoDiv.innerHTML = '<div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin:0 auto;max-width:320px;">'
+      var imgHtml = product.image ? '<div style="width:100%;max-height:140px;overflow:hidden;background:#f9fafb;display:flex;align-items:center;justify-content:center;"><img src="' + product.image + '" style="max-width:100%;max-height:140px;object-fit:contain;"></div>' : '';
+      infoDiv.innerHTML = '<div style="background:#fff;border-radius:12px;overflow:hidden;">'
         + imgHtml
-        + '<div style="background:linear-gradient(135deg,#e91e63,#c2185b);color:#fff;padding:16px;text-align:center;">'
-        + '<div style="font-size:1.3rem;font-weight:700;">' + product.name + '</div>'
-        + '<div style="font-size:0.85rem;opacity:0.9;margin-top:4px;">Cod: ' + product.code + '</div>'
+        + '<div style="background:linear-gradient(135deg,#e91e63,#c2185b);color:#fff;padding:10px 14px;text-align:center;">'
+        + '<div style="font-size:1rem;font-weight:700;">' + product.name + '</div>'
+        + '<div style="font-size:0.75rem;opacity:0.9;margin-top:2px;">Cod: ' + product.code + '</div>'
         + '</div>'
-        + '<div style="padding:16px;">'
-        + '<div style="font-size:1.5rem;font-weight:800;color:#059669;text-align:center;">$' + product.price + '</div>'
-        + '<div style="font-size:0.8rem;color:#999;text-align:center;margin-top:2px;">Precio de lista</div>'
+        + '<div style="padding:10px 14px;">'
+        + '<div style="font-size:1.2rem;font-weight:800;color:#059669;text-align:center;">$' + product.price + '</div>'
         + cuotaText
-        + '<div style="background:' + stockBg + ';color:' + stockColor + ';padding:8px 12px;border-radius:8px;margin-top:8px;text-align:center;font-weight:600;font-size:0.9rem;">' + stockText + '</div>'
+        + '<div style="background:' + stockBg + ';color:' + stockColor + ';padding:6px 10px;border-radius:6px;margin-top:6px;text-align:center;font-weight:600;font-size:0.8rem;">' + stockText + '</div>'
         + '</div>'
         + '</div>';
     } else {
-      infoDiv.innerHTML = '<div style="text-align:center;padding:20px;">'
-        + '<div style="font-size:1.2rem;font-weight:700;color:#dc2626;margin-bottom:8px;">\u274c No encontrado</div>'
-        + '<div style="color:#6b7280;">El codigo "' + (product && product.code || '') + '" no esta en el catalogo</div>'
-        + '<div style="color:#999;font-size:0.85rem;margin-top:8px;">Asegurate de que el producto este cargado en entrega inmediata</div>'
+      infoDiv.innerHTML = '<div style="text-align:center;padding:16px;">'
+        + '<div style="font-size:1rem;font-weight:700;color:#dc2626;margin-bottom:6px;">\u274c No encontrado</div>'
+        + '<div style="color:#6b7280;font-size:0.85rem;">El codigo "' + (product && product.code || '') + '" no esta en el catalogo</div>'
         + '</div>';
     }
-    resultDiv.style.display = 'flex';
-    document.getElementById('scanner-container').style.display = 'none';
-    // Remove any previous tap-to-close listener to avoid stacking
-    const tapTarget = resultDiv;
-    const tapHandler = function(e) {
-      // Only close if user taps on the result area (not on buttons)
-      if (e.target.tagName !== 'BUTTON') {
-        closeScanner();
-      }
+    // Show result card floating over the camera
+    resultCard.style.display = 'block';
+    // Tap the card to resume scanning immediately
+    resultCard.onclick = function(e) {
+      if (e.target.tagName === 'BUTTON') return;
+      resultCard.style.display = 'none';
+      restartScanner();
     };
-    tapTarget.onclick = tapHandler;
-    // Do NOT reset lookupResultReceived with a short timeout - keep it locked
-    // so duplicate scans don't trigger another lookup
-    setTimeout(() => { lookupResultReceived = false; }, 10000);
+    // Auto-resume scanning after 3.5 seconds
+    if (window._scannerAutoResume) clearTimeout(window._scannerAutoResume);
+    window._scannerAutoResume = setTimeout(function() {
+      resultCard.style.display = 'none';
+      restartScanner();
+    }, 3500);
+    // Reset lookup lock after a delay
+    setTimeout(() => { lookupResultReceived = false; }, 2000);
   }
 
   // ============ BARCODE PRINT SHEET ============
