@@ -13,7 +13,7 @@
 // El script detecta el cambio y recarga con ?sv=NEW_VERSION, lo que fuerza
 // al navegador a pedir el HTML nuevo (sin usar caché).
 (function(){
-  var SITE_VERSION = 'sv-2026-08-08-manual-prod-v84';
+  var SITE_VERSION = 'sv-2026-08-08-manual-print-v85';
   var key = 'monique_site_version';
   var url = new URL(window.location.href);
   var currentSv = url.searchParams.get('sv');
@@ -195,6 +195,15 @@
       </select>
       <input id="print-search" type="text" placeholder="Buscar por nombre o codigo..." style="flex:1;min-width:150px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;" oninput="filterPrintProducts()">
       <button onclick="loadPrintProducts()" style="padding:8px 16px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;font-weight:600;">Cargar productos</button>
+      <button onclick="toggleManualPrintEntry()" style="padding:8px 16px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;font-weight:600;">+ Agregar manual</button>
+    </div>
+    <div id="manual-print-entry" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px;margin-bottom:10px;">
+      <div style="font-size:0.8rem;font-weight:600;color:#0369a1;margin-bottom:6px;">Agregar producto que no esta en la campaña:</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <input id="manual-print-code" type="text" placeholder="Codigo" style="width:90px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem;">
+        <input id="manual-print-name" type="text" placeholder="Nombre del producto" style="flex:1;min-width:120px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem;">
+        <button onclick="addManualPrintProduct()" style="padding:6px 14px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;font-size:0.85rem;cursor:pointer;font-weight:600;">Agregar</button>
+      </div>
     </div>
     <div id="print-cart-summary" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;margin-bottom:10px;display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -921,6 +930,53 @@ function selectAllPrintProducts() {
 function clearPrintCart() {
   _printCart = {};
   renderPrintProductList();
+}
+
+function toggleManualPrintEntry() {
+  var el = document.getElementById('manual-print-entry');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (el.style.display === 'block') {
+    document.getElementById('manual-print-code').focus();
+  }
+}
+
+function addManualPrintProduct() {
+  var code = document.getElementById('manual-print-code').value.trim();
+  var name = document.getElementById('manual-print-name').value.trim();
+  if (!code) {
+    alert('Ingresa el codigo del producto');
+    document.getElementById('manual-print-code').focus();
+    return;
+  }
+  if (!name) {
+    alert('Ingresa el nombre del producto');
+    document.getElementById('manual-print-name').focus();
+    return;
+  }
+  // Check if already in the list
+  var existing = _allPrintProducts.find(function(p) { return String(p.c) === String(code); });
+  if (!existing) {
+    // Add to product list
+    _allPrintProducts.push({ c: code, n: name, v: 0 });
+    // Also save to cuotas iframe as custom product for future use
+    if (frames['cuotas'] && frames['cuotas'].contentWindow) {
+      frames['cuotas'].contentWindow.postMessage({
+        action: 'add-manual-product',
+        product: { c: code, n: name, v: 0 },
+        stock: 0
+      }, '*');
+    }
+  }
+  // Add to cart
+  _printCart[String(code)] = _printCart[String(code)] || 1;
+  // Clear inputs
+  document.getElementById('manual-print-code').value = '';
+  document.getElementById('manual-print-name').value = '';
+  // Re-render
+  renderPrintProductList();
+  // Scroll to the newly added product
+  var container = document.getElementById('print-sheet-container');
+  container.scrollTop = container.scrollHeight;
 }
 
 function updateCartSummary() {
