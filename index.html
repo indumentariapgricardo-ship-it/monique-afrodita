@@ -813,15 +813,6 @@ function updateCartSummary() {
   }
 }
 
-let jsBarcodeLoaded = false;
-function loadJsBarcode(callback) {
-  if (jsBarcodeLoaded && typeof JsBarcode !== 'undefined') { callback(); return; }
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
-  script.onload = () => { jsBarcodeLoaded = true; callback(); };
-  script.onerror = () => { alert('No se pudo cargar la libreria de codigos de barras'); };
-  document.head.appendChild(script);
-}
 
 function generateThermalPDFFromCart() {
   let totalLabels = 0;
