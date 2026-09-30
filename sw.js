@@ -1,6 +1,6 @@
 // SW v85 - Red-segura: nunca causa bucles de recarga.
 // Estrategia: network-first para todo; cache solo como respaldo offline.
-var CACHE = 'monique-v87';
+var CACHE = 'monique-v88';
 self.addEventListener('install', function(e) {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(function(c) {
