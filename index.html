@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-09-29-v84-base44';
+  var SITE_VERSION = 'sv-2026-09-30-v85-pwa';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -6647,59 +6647,18 @@ window.addEventListener('error', function(e){
 
 <script>
 // v83: bloque de registro de SW desactivado (causaba bucle de recargas).
-if (false) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('service-worker.js').then(function(reg) {
-// v83: limpiar cualquier SW viejo que haya quedado registrado en el celu
+// v85: registro SEGURO del SW para PWA. Sin recargas automáticas, sin bucles.
 if ('serviceWorker' in navigator) {
-  try {
+  window.addEventListener('load', function() {
+    // Limpiar cualquier SW viejo que hubiera quedado del sitio en Surge
     navigator.serviceWorker.getRegistrations().then(function(regs) {
-      regs.forEach(function(r) { r.unregister().catch(function(){}); });
-    }).catch(function(){});
-    if ('caches' in window) {
-      caches.keys().then(function(names){ names.forEach(function(n){ caches.delete(n); }); }).catch(function(){});
-    }
-  } catch(e) {}
-}
-      console.log('SW registrado:', reg.scope);
-      // Escuchar nuevas versiones del SW
-      reg.addEventListener('updatefound', function() {
-        var newWorker = reg.installing;
-        newWorker.addEventListener('statechange', function() {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // Nueva version del SW instalada - recargar para activarla
-            console.log('Nueva version del SW detectada, recargando...');
-            window.location.reload();
-          }
-        });
+      return Promise.all(regs.map(function(r) { return r.unregister().catch(function(){}); }));
+    }).catch(function(){}).then(function() {
+      // Registrar el SW nuevo de GitHub Pages (red-segura, sin loops)
+      navigator.serviceWorker.register('sw.js').catch(function(err) {
+        console.log('SW registro fallido (no crítico):', err);
       });
-    }).catch(function(err) {
-      console.log('SW error:', err);
     });
-
-    // Recargar la pagina cuando un nuevo SW toma control
-    // Listen for SW_UPDATED message to force immediate reload
-    navigator.serviceWorker.addEventListener('message', function(e) {
-      if (e.data && e.data.type === 'SW_UPDATED') {
-        console.log('SW: received SW_UPDATED, forcing reload...');
-        window.location.reload();
-      }
-    });
-    // FIX v69: el SW passthrough no cambia nada del contenido, no hace falta
-    // recargar la pagina cuando toma el control (eso interrumpia el arranque).
-  });
-
-  // Verificar actualizaciones cuando la PWA vuelve a estar activa (foreground)
-  document.addEventListener('visibilitychange', function() {
-    if (!document.hidden && document.visibilityState === 'visible') {
-      navigator.serviceWorker.getRegistration().then(function(reg) {
-        if (reg) {
-          reg.update().catch(function() {});
-        }
-      });
-      // Tambien verificar el SITE_VERSION via fetch (fallback si no hay SW)
-      checkSiteVersion();
-    }
   });
 }
 
