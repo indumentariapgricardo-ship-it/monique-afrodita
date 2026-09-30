@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-09-30-v89-dinamico';
+  var SITE_VERSION = 'sv-2026-09-30-v90-campania';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -713,7 +713,8 @@ window.addEventListener('error', function(e){
         localStorage.setItem('monique_cuotas_products', JSON.stringify(products));
         localStorage.setItem('monique_buscador_products', JSON.stringify(products));
         localStorage.setItem('monique_products_version', 'backend');
-        var ct = { num: '09', month: 'SEPTIEMBRE', year: '2026' }; // Override siempre Septiembre
+        var ct = (data.campaignTitle && data.campaignTitle.num) ? data.campaignTitle : { num: '09', month: 'SEPTIEMBRE', year: '2026' };
+        try { localStorage.setItem('monique_campaign_title', JSON.stringify(ct)); } catch(e) {}
         lastProductsUpdate = { products: products, campaignTitle: ct };
         // Broadcast to all loaded iframes
         ['catalogo', 'cuotas', 'buscador'].forEach(function(name) {
@@ -731,9 +732,9 @@ window.addEventListener('error', function(e){
   }
 
   // Save catalog to backend (when admin updates products/photos)
-  async function saveCatalogoToBackend(products) {
+  async function saveCatalogoToBackend(products, ctArg) {
     try {
-      var ct = lastProductsUpdate ? JSON.stringify(lastProductsUpdate.campaignTitle) : '';
+      var ct = ctArg ? JSON.stringify(ctArg) : (lastProductsUpdate ? JSON.stringify(lastProductsUpdate.campaignTitle) : '');
       const resp = await fetch(CATALOGO_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -785,7 +786,9 @@ window.addEventListener('error', function(e){
       localStorage.setItem('monique_cuotas_products', JSON.stringify(CATALOG_PRODUCTS));
       localStorage.setItem('monique_buscador_products', JSON.stringify(CATALOG_PRODUCTS));
       localStorage.setItem('monique_products_version', PRODUCTS_VERSION);
-      lastProductsUpdate = { products: CATALOG_PRODUCTS, campaignTitle: { num: '09', month: 'SEPTIEMBRE', year: '2026' } };
+      var _savedTitle = null;
+      try { _savedTitle = JSON.parse(localStorage.getItem('monique_campaign_title') || 'null'); } catch(e) {}
+      lastProductsUpdate = { products: CATALOG_PRODUCTS, campaignTitle: (_savedTitle && _savedTitle.num) ? _savedTitle : { num: '09', month: 'SEPTIEMBRE', year: '2026' } };
       // fetchCatalogoFromBackend (llamado abajo) reemplazará esto con datos reales de la DB
     } catch(e) { 
       console.log('Error restoring products, using embedded:', e);
@@ -3123,7 +3126,7 @@ window.addEventListener('error', function(e){
         frames.home.contentWindow.postMessage({ action: 'set-contact-link', link: data.link }, '*');
       }
     } else if (data.action === 'products-updated') {
-      lastProductsUpdate = { products: data.products, campaignTitle: { num: '09', month: 'SEPTIEMBRE', year: '2026' } };
+      lastProductsUpdate = { products: data.products, campaignTitle: (data.campaignTitle && data.campaignTitle.num) ? data.campaignTitle : { num: '09', month: 'SEPTIEMBRE', year: '2026' } };
       if (loaded.catalogo) {
         frames.catalogo.contentWindow.postMessage(Object.assign({ action: 'set-products' }, lastProductsUpdate), '*');
       }
@@ -4803,6 +4806,7 @@ window.addEventListener('error', function(e){
       localStorage.setItem('monique_buscador_products', JSON.stringify(products));
       localStorage.setItem('monique_products', JSON.stringify(products));
       // Guardar en base de datos (reemplaza todo el catálogo anterior)
+      lastProductsUpdate = { products: products, campaignTitle: _campTitle };
       saveCatalogoToBackend(products);
       
 
@@ -4824,10 +4828,12 @@ window.addEventListener('error', function(e){
       const _pdfFile = document.getElementById('parent-pdf-input').files[0];
       const _pdfName = _pdfFile ? _pdfFile.name.toUpperCase() : '';
       let _campTitle = { num: '09', month: 'SEPTIEMBRE', year: '2026' };
-      const _monthMatch = _pdfName.match(/(\d{2})[-_]?(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)[A-Z]*[-_]?(\d{4})/);
+      const _months = {ENE:'ENERO',FEB:'FEBRERO',MAR:'MARZO',ABR:'ABRIL',MAY:'MAYO',JUN:'JUNIO',JUL:'JULIO',AGO:'AGOSTO',SEP:'SEPTIEMBRE',OCT:'OCTUBRE',NOV:'NOVIEMBRE',DIC:'DICIEMBRE'};
+      const _mNum = {ENE:'01',FEB:'02',MAR:'03',ABR:'04',MAY:'05',JUN:'06',JUL:'07',AGO:'08',SEP:'09',OCT:'10',NOV:'11',DIC:'12'};
+      const _monthMatch = _pdfName.match(/(\d{2})?[-_ ]?(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)[A-Z]*/);
+      const _yearMatch = _pdfName.match(/(\d{4})/);
       if (_monthMatch) {
-        const _months = {ENE:'ENERO',FEB:'FEBRERO',MAR:'MARZO',ABR:'ABRIL',MAY:'MAYO',JUN:'JUNIO',JUL:'JULIO',AGO:'AGOSTO',SEP:'SEPTIEMBRE',OCT:'OCTUBRE',NOV:'NOVIEMBRE',DIC:'DICIEMBRE'};
-        _campTitle = { num: _monthMatch[1], month: _months[_monthMatch[2]] || _monthMatch[2], year: _monthMatch[3] };
+        _campTitle = { num: _monthMatch[1] || _mNum[_monthMatch[2]], month: _months[_monthMatch[2]] || _monthMatch[2], year: _yearMatch ? _yearMatch[1] : String(new Date().getFullYear()) };
       }
       localStorage.setItem('monique_campaign_title', JSON.stringify(_campTitle));
       const productData = { action: 'set-products', products: products, campaignTitle: _campTitle };
