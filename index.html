@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v98-sync-fotos-locales';
+  var SITE_VERSION = 'sv-2026-10-04-v99-fotos-tarde';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -7806,6 +7806,9 @@ window.addEventListener('appinstalled', function() {
         if (data && data.ok && data.images){
           Object.keys(data.images).forEach(function(k){ AI_IMG_CACHE[String(k)] = data.images[k]; });
           aiLoadBackendImages._done = 1;
+          // v99: la descarga llega DESPUES de que se renderizaron tarjetas;
+          // repasar el chat y completar las fotos que quedaron con placeholder.
+          try { fillCardImages(document.getElementById('ai-messages')); } catch(e){}
         }
         AI_IMG_LOADING = false;
       }).catch(function(){ AI_IMG_LOADING = false; });
