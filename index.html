@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v99-fotos-tarde';
+  var SITE_VERSION = 'sv-2026-10-04-v100-foto-puntual';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -7820,20 +7820,44 @@ window.addEventListener('appinstalled', function() {
     if (AI_IMG_CACHE[cod]){ applyImg(el, AI_IMG_CACHE[cod]); return true; }
     return false;
   }
+  var AI_IMG_FETCHED = {};
+  function aiQueueImageFetch(cod, els){
+    if (!cod) return;
+    if (AI_IMG_FETCHED[String(cod)]) return;
+    AI_IMG_FETCHED[String(cod)] = true;
+    fetch('https://solene-aa3bc6a5.base44.app/functions/imageManager', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get', cod: String(cod) })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.ok && d.dataUrl){
+        AI_IMG_CACHE[String(cod)] = d.dataUrl;
+        (els || []).forEach(function(el){ try { applyImg(el, d.dataUrl); } catch(e){} });
+      } else {
+        AI_IMG_FETCHED[String(cod)] = false;
+        (els || []).forEach(function(el){
+          try {
+            var c2 = el.getAttribute && el.getAttribute('data-cod2');
+            if (c2 && c2 !== String(cod)) aiQueueImageFetch(c2, [el]);
+          } catch(e){}
+        });
+      }
+    }).catch(function(){ AI_IMG_FETCHED[String(cod)] = false; });
+  }
   function fillCardImages(scope){
     try { aiLoadBackendImages();
       var els = scope.querySelectorAll('.ai-card-img[data-cod]');
+      var need = {};
       Array.prototype.forEach.call(els, function(el){
         var cod = el.getAttribute('data-cod');
         if (_tryFillImg(el, cod)) return;
+        need[String(cod)] = need[String(cod)] || [];
+        need[String(cod)].push(el);
         idbGetImage(cod).then(function(d){
-          if (d){ applyImg(el, d); return; }
-          var cod2 = el.getAttribute('data-cod2');
-          if (!cod2 || cod2 === cod) return;
-          if (_tryFillImg(el, cod2)) return;
-          idbGetImage(cod2).then(function(d2){ if (d2) applyImg(el, d2); });
+          if (d && !el.style.backgroundImage) applyImg(el, d);
         });
       });
+      // v100: pedir al backend SOLO las fotos que faltan (getAll completo pesa 14MB)
+      Object.keys(need).forEach(function(cod){ aiQueueImageFetch(cod, need[cod]); });
     } catch(e){}
   }
 
