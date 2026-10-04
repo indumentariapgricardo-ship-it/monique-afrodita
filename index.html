@@ -8966,9 +8966,14 @@ function answer(q){
     });
     var filtered = [];
     if (toks.length){
+      var _quierePerfume = /perfumes?/.test(toks.join(' '));
       conStock.forEach(function(p){
         var txt = norm(p.descripcion + ' ' + (p.categoria||''));
-        if (toks.some(function(t){ return txt.indexOf(t) !== -1; })) filtered.push(p);
+        var hit = toks.some(function(t){ return txt.indexOf(t) !== -1; });
+        if (!hit && _quierePerfume){
+          hit = norm(p.categoria||'').indexOf('perfume') !== -1 || /^perf/.test(norm(p.descripcion));
+        }
+        if (hit) filtered.push(p);
       });
     }
     var picks = filtered.length ? filtered : conStock;
