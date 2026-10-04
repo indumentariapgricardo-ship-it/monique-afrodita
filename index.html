@@ -8936,6 +8936,20 @@ function answer(q){
 // o si Gemini no puede responder (error / sin respuesta).
   // ===== Respuesta local de ENTREGA INMEDIATA con el stock de Cuotas =====
   function localInmediataAnswer(q){
+    // refrescar siempre el stock del servidor antes de responder (el local manda si ya existe)
+    var typing = botSay('\ud83d\udd0d Reviso qu\u00e9 hay con stock para entrega inmediata...');
+    var _done = false;
+    var run = function(){
+      if (_done) return; _done = true;
+      try { typing.remove(); } catch(e){}
+      localInmediataBuild(q);
+    };
+    try {
+      loadGlobalStockParent().then(function(){ setTimeout(run, 80); }).catch(function(){ run(); });
+    } catch(e) { run(); }
+    setTimeout(run, 4500); // seguro: nunca dejar sin respuesta
+  }
+  function localInmediataBuild(q){
     var st = getStock();
     var list = getProducts().filter(function(p){ return p && p.descripcion && String(p.tipo||'v').charAt(0) !== 'm'; });
     var conStock = list.filter(function(p){ return (st[String(p.cod)] || 0) > 0; });
