@@ -8977,9 +8977,9 @@ function answer(q){
     var recs = show.map(function(p){ return { p: p, sc: 5, reasons: ['con stock: entrega inmediata'], st: st[String(p.cod)] || 0, hasStockData: true }; });
     S.aiMem.shownProducts = show;
     var intro = filtered.length
-      ? 'Sí! De eso que me pedís tengo con <b>entrega inmediata</b> \ud83d\ude80 (pagás en 2 o 3 cuotas):'
-      : 'Claro! Esto es lo que tengo con stock para <b>entrega inmediata</b> \ud83d\ude80 (sección Cuotas, pagás en 2 o 3 cuotas):';
-    if (picks.length > MAX) intro += '<br><br>Hay ' + picks.length + ' productos con stock en total; decime un tema (<i>perfumes</i>, <i>cremas</i>, <i>maquillaje</i>) y te filtro.';
+      ? 'Sí! De eso que me pedís tengo con entrega inmediata \ud83d\ude80 (pagás en 2 o 3 cuotas):'
+      : 'Claro! Esto es lo que tengo con stock para entrega inmediata \ud83d\ude80 (sección Cuotas, pagás en 2 o 3 cuotas):';
+    if (picks.length > MAX) intro += '<br><br>Hay ' + picks.length + ' productos con stock en total; decime un tema (perfumes, cremas, maquillaje) y te filtro.';
     recommendBubble(recs, intro);
   }
 
