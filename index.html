@@ -8960,21 +8960,50 @@ function answer(q){
       botSay('Ahora mismo no me queda stock para entrega inmediata \ud83d\ude15<br><br>Pero podés encargar cualquiera del catálogo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. ¿Querés que te recomiende algo? \ud83c\udf38');
       return;
     }
-    // ¿la clienta busca algo puntual? filtrar el stock por lo que menciona
-    var toks = tokens(q).filter(function(t){
-      return !/^(entrega|inmediata|inmediato|inmediatas|stock|disponible|disponibles|disponibl|hay|tienen|tenes|que|para|ya|ahora|algo|cosas|producto|productos|cuotas|cuota|cual|cuales|del|los|las|el|la|de|con|en|un|una|me|te|sos|es|mostrame|muestrame|ver|verlos|fotos|tarjetas|quiero|busco|hoy|semana)$/i.test(t);
-    });
+    // intención de la consulta leída del texto completo (tema y género)
+    var nqI = norm(q);
+    var _quierePerfume = /perfume|perfumes|fragancia|fragancias|colonia|colonias|aroma|aromas/.test(nqI);
+    var _genero = null;
+    if (/mujer|femenin|for her|dama/.test(nqI)) _genero = 'femenino';
+    else if (/hombre|masculin|for him|caballero/.test(nqI)) _genero = 'masculino';
+    else if (/unisex/.test(nqI)) _genero = 'unisex';
+    else if (/nino|nene|nena|bebe|infantil|kids/.test(nqI)) _genero = 'nino';
+    var _tema = null;
+    if (/crema|facial|corporal|piel|shampoo|acondicionador|keratina|tratamiento|jabon|desodorante|cuidado/.test(nqI)) _tema = 'cuidado';
+    else if (/maquillaje|labial|esmalte|rimel|mascara|sombra|delineador/.test(nqI)) _tema = 'maquillaje';
     var filtered = [];
-    if (toks.length){
-      var _quierePerfume = /perfumes?/.test(toks.join(' '));
+    if (_quierePerfume || _genero || _tema){
       conStock.forEach(function(p){
-        var txt = norm(p.descripcion + ' ' + (p.categoria||''));
-        var hit = toks.some(function(t){ return txt.indexOf(t) !== -1; });
-        if (!hit && _quierePerfume){
-          hit = norm(p.categoria||'').indexOf('perfume') !== -1 || /^perf/.test(norm(p.descripcion));
+        var d = norm(p.descripcion);
+        var cat = norm(p.categoria||'');
+        var hit = true;
+        if (_quierePerfume) hit = cat.indexOf('perfume') !== -1 || /^perf/.test(d) || /extracto|parfum/.test(d);
+        if (hit && _genero){
+          var m = /for him|hombre|masculin/.test(d) ? 'masculino'
+                : (/for her|mujer|femenin/.test(d) ? 'femenino'
+                : (/unisex/.test(d) ? 'unisex'
+                : (/nene|nena|infant|baby|nino/.test(d) ? 'nino' : null)));
+          hit = (m === _genero);
         }
+        if (hit && _tema === 'cuidado') hit = /crema|facial|corporal|gel|shampoo|acondicionador|keratina|tratamiento|jabon|desodorante/.test(d + ' ' + cat);
+        if (hit && _tema === 'maquillaje') hit = /labial|esmalte|rimel|mascara|sombra|delineador|maquillaje/.test(d + ' ' + cat) || cat.indexOf('maquillaje') !== -1;
         if (hit) filtered.push(p);
       });
+      if (!filtered.length){
+        var _queEs = _genero ? ('de ' + (_genero === 'nino' ? 'niño' : _genero)) : (_tema ? 'de ' + _tema : '');
+        botSay('Ahora no me queda stock ' + _queEs + ' para entrega inmediata \ud83d\ude15<br><br>Pod\u00e9s encargarlo por cat\u00e1logo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. Si quer\u00e9s, te muestro lo que s\u00ed tengo ya \ud83d\ude80');
+        return;
+      }
+    } else {
+      var toks = tokens(q).filter(function(t){
+        return !/^(entrega|inmediata|inmediato|inmediatas|stock|disponible|disponibles|disponibl|hay|tienen|tenes|que|para|ya|ahora|algo|cosas|producto|productos|cuotas|cuota|cual|cuales|del|los|las|el|la|de|con|en|un|una|me|te|sos|es|mostrame|muestrame|ver|verlos|fotos|tarjetas|quiero|busco|hoy|semana)$/i.test(t);
+      });
+      if (toks.length){
+        conStock.forEach(function(p){
+          var txt = norm(p.descripcion + ' ' + (p.categoria||''));
+          if (toks.some(function(t){ return txt.indexOf(t) !== -1; })) filtered.push(p);
+        });
+      }
     }
     var picks = filtered.length ? filtered : conStock;
     var MAX = 8;
@@ -8984,7 +9013,7 @@ function answer(q){
     var intro = filtered.length
       ? 'Sí! De eso que me pedís tengo con entrega inmediata \ud83d\ude80 (pagás en 2 o 3 cuotas):'
       : 'Claro! Esto es lo que tengo con stock para entrega inmediata \ud83d\ude80 (sección Cuotas, pagás en 2 o 3 cuotas):';
-    if (picks.length > MAX) intro += '<br><br>Hay ' + picks.length + ' productos con stock en total; decime un tema (perfumes, cremas, maquillaje) y te filtro.';
+    if (picks.length > MAX) intro += '<br><br>' + (filtered.length ? 'Son ' + picks.length + ' en total; pedime otra tanda si querés más opciones.' : 'Hay ' + picks.length + ' productos con stock en total; decime un tema (perfumes, cremas, maquillaje) y te filtro.');
     recommendBubble(recs, intro);
   }
 
@@ -8996,7 +9025,10 @@ function aiRoute(q){
   if (/pdf/.test(nq) && /(catalogo|lista|listado|producto|precio|hoja|entrega inmediata|stock|disponibl)/.test(nq)) { answer(q); return; }
   if (!S.lead && /(vendedor|vendedora|consejer|revend|quiero vender|me gustaria vender|sumarme|unirme|trabajar|ser parte|equipo|patrocinad)/.test(nq) && !/(precio|cuanto|cuota|como funciona)/.test(nq)) { answer(q); return; }
   // ===== ENTREGA INMEDIATA: responder en local con el stock de la sección Cuotas (no depende de la IA) =====
-  if (!/pdf/.test(nq) && /(entrega inmediata|inmediat|disponibl|hay stock|tienen stock|tenes stock|con stock|que hay ya|que tienen ya|que hay listo)/.test(nq)) { localInmediataAnswer(q); return; }
+  var _disp = /(entrega inmediata|inmediat|disponibl|hay stock|tienen stock|tenes stock|con stock|que hay ya|que tienen ya|que hay listo)/.test(nq);
+  if (!_disp && /\bya\b/.test(nq)) _disp = /(hay|tienen|tenes|disponibl|stock|listo|inmediat)/.test(nq);
+  var _pg = /(perfume|perfumes|fragancia|fragancias)/.test(nq) && /(hombre|mujer|masculin|femenin|unisex|nino|nene|nena)/.test(nq) && /(disponibl|ya|hay|stock|inmediat|tenes|tienen)/.test(nq);
+  if (!/pdf/.test(nq) && (_disp || _pg)) { localInmediataAnswer(q); return; }
   aiVendedorCall(q, 'Ups, en este momento no puedo consultar bien el catalogo. Proba de nuevo en un momentito.', true);
 }
 window.MoniAI = {
