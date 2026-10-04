@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-03-v91-fotos';
+  var SITE_VERSION = 'sv-2026-10-04-v92-asistente';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -7854,24 +7854,49 @@ window.addEventListener('appinstalled', function() {
           if (S.aiMem) S.aiMem.shownProducts = recs.map(function(r){ return r.p; });
         }
       } else if (localFallback){
-        botSay('Ups, mi cerebro IA no est\u00e1 disponible en este momento \u{1F916} Prob\u00e1 de nuevo en un momentito.');
+        // IA no disponible: responder con el cerebro local (catálogo, stock, vademecum)
+        try { answer(q); } catch(e){ botSay('Ups, mi cerebro IA no est\u00e1 disponible en este momento \u{1F916} Prob\u00e1 de nuevo en un momentito.'); }
       } else {
         botSay(fallbackHtml);
       }
     })
     .catch(function(){ if (timer) clearTimeout(timer); try { typing.remove(); } catch(e){}
       if (localFallback){
-        botSay('Ups, mi cerebro IA no est\u00e1 disponible en este momento \u{1F916} Prob\u00e1 de nuevo en un momentito.');
+        try { answer(q); } catch(e){ botSay('Ups, mi cerebro IA no est\u00e1 disponible en este momento \u{1F916} Prob\u00e1 de nuevo en un momentito.'); }
       } else { botSay(fallbackHtml); }
     });
   }
 
-  // ===== DATOS DE CAMPAÑA ACTUAL (actualizar cada mes) =====
+  // ===== DATOS DE CAMPAÑA ACTUAL: se refrescan solos desde el backend =====
   var CAMPAIGN = {
-    cierre: 'lunes 29 de septiembre',
-    entrega: 'entre el 4 y el 8 de octubre'
+    cierre: 'miércoles 28 de octubre',
+    entrega: 'entre el 5 y el 6 de noviembre'
   };
   var ENCARGO_TXT = 'se pide por catálogo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. Se paga en dos cuotas: una al encargarlo y el resto a la entrega';
+  (function refreshAiCampaign(){
+    try {
+      fetch('https://solene-3c64045a.base44.app/functions/gestionConsejera', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'getConfig' }) })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (!d || !d.ok || !d.closingDate) return;
+          var parts = String(d.closingDate).split('-');
+          if (parts.length !== 3) return;
+          var y = +parts[0], m = +parts[1], dd = +parts[2];
+          var ME = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+          var DIAS = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+          var wd = new Date(y, m - 1, dd).getDay();
+          CAMPAIGN.cierre = DIAS[wd] + ' ' + dd + ' de ' + ME[m - 1];
+          var ny = (m === 12) ? y + 1 : y, nm = (m === 12) ? 1 : m + 1, hab = [], day = 1;
+          while (hab.length < 5 && day <= 31){
+            var w = new Date(ny, nm - 1, day).getDay();
+            if (w !== 0 && w !== 6) hab.push(day);
+            day++;
+          }
+          if (hab.length >= 5) CAMPAIGN.entrega = 'entre el ' + hab[3] + ' y el ' + hab[4] + ' de ' + ME[nm - 1];
+          ENCARGO_TXT = 'se pide por catálogo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. Se paga en dos cuotas: una al encargarlo y el resto a la entrega';
+        }).catch(function(e){});
+    } catch(e) {}
+  })();
 
   // Tabla oficial de equivalencias Homenaje Monique (según ficha de catálogo, actualizada 2026-09-04)
   var HOMENAJE_MAP = [
@@ -8909,6 +8934,38 @@ function answer(q){
 // El asistente local solo actua si hay un flujo de UI activo (agregar al carrito,
 // registro de vendedora paso a paso, armado de PDF, comandos del dueno)
 // o si Gemini no puede responder (error / sin respuesta).
+  // ===== Respuesta local de ENTREGA INMEDIATA con el stock de Cuotas =====
+  function localInmediataAnswer(q){
+    var st = getStock();
+    var list = getProducts().filter(function(p){ return p && p.descripcion && String(p.tipo||'v').charAt(0) !== 'm'; });
+    var conStock = list.filter(function(p){ return (st[String(p.cod)] || 0) > 0; });
+    if (!conStock.length){
+      botSay('Ahora mismo no me queda stock para entrega inmediata \ud83d\ude15<br><br>Pero podés encargar cualquiera del catálogo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. ¿Querés que te recomiende algo? \ud83c\udf38');
+      return;
+    }
+    // ¿la clienta busca algo puntual? filtrar el stock por lo que menciona
+    var toks = tokens(q).filter(function(t){
+      return !/^(entrega|inmediata|inmediato|inmediatas|stock|disponible|disponibles|disponibl|hay|tienen|tenes|que|para|ya|ahora|algo|cosas|producto|productos|cuotas|cuota|cual|cuales|del|los|las|el|la|de|con|en|un|una|me|te|sos|es|mostrame|muestrame|ver|verlos|fotos|tarjetas|quiero|busco|hoy|semana)$/i.test(t);
+    });
+    var filtered = [];
+    if (toks.length){
+      conStock.forEach(function(p){
+        var txt = norm(p.descripcion + ' ' + (p.categoria||''));
+        if (toks.some(function(t){ return txt.indexOf(t) !== -1; })) filtered.push(p);
+      });
+    }
+    var picks = filtered.length ? filtered : conStock;
+    var MAX = 8;
+    var show = picks.slice(0, MAX);
+    var recs = show.map(function(p){ return { p: p, sc: 5, reasons: ['con stock: entrega inmediata'], st: st[String(p.cod)] || 0, hasStockData: true }; });
+    S.aiMem.shownProducts = show;
+    var intro = filtered.length
+      ? 'Sí! De eso que me pedís tengo con <b>entrega inmediata</b> \ud83d\ude80 (pagás en 2 o 3 cuotas):'
+      : 'Claro! Esto es lo que tengo con stock para <b>entrega inmediata</b> \ud83d\ude80 (sección Cuotas, pagás en 2 o 3 cuotas):';
+    if (picks.length > MAX) intro += '<br><br>Hay ' + picks.length + ' productos con stock en total; decime un tema (<i>perfumes</i>, <i>cremas</i>, <i>maquillaje</i>) y te filtro.';
+    recommendBubble(recs, intro);
+  }
+
 function aiRoute(q){
   var nq = norm(q);
   if (S.lead && S.lead.stage) { answer(q); return; }
@@ -8916,6 +8973,8 @@ function aiRoute(q){
   if (nq.indexOf('/aprender') === 0 || nq.indexOf('/olvidar') === 0) { answer(q); return; }
   if (/pdf/.test(nq) && /(catalogo|lista|listado|producto|precio|hoja|entrega inmediata|stock|disponibl)/.test(nq)) { answer(q); return; }
   if (!S.lead && /(vendedor|vendedora|consejer|revend|quiero vender|me gustaria vender|sumarme|unirme|trabajar|ser parte|equipo|patrocinad)/.test(nq) && !/(precio|cuanto|cuota|como funciona)/.test(nq)) { answer(q); return; }
+  // ===== ENTREGA INMEDIATA: responder en local con el stock de la sección Cuotas (no depende de la IA) =====
+  if (!/pdf/.test(nq) && /(entrega inmediata|inmediat|disponibl|hay stock|tienen stock|tenes stock|con stock|que hay ya|que tienen ya|que hay listo)/.test(nq)) { localInmediataAnswer(q); return; }
   aiVendedorCall(q, 'Ups, en este momento no puedo consultar bien el catalogo. Proba de nuevo en un momentito.', true);
 }
 window.MoniAI = {
