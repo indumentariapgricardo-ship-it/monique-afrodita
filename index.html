@@ -8942,7 +8942,10 @@ function answer(q){
     var run = function(){
       if (_done) return; _done = true;
       try { typing.remove(); } catch(e){}
-      localInmediataBuild(q);
+      try {
+        if (!S.aiMem) S.aiMem = { lastQuery:'', lastGender:'', shownProducts:[], morePicks:[] };
+        localInmediataBuild(q);
+      } catch(e2){ botSay('Ups, tuve un problema procesando eso \ud83d\ude05. Prob\u00e1 de nuevo con otras palabras.'); }
     };
     try {
       loadGlobalStockParent().then(function(){ setTimeout(run, 80); }).catch(function(){ run(); });
