@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v96-fotos-combos';
+  var SITE_VERSION = 'sv-2026-10-04-v97-fotos-combos-backend';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -7811,15 +7811,25 @@ window.addEventListener('appinstalled', function() {
       }).catch(function(){ AI_IMG_LOADING = false; });
     } catch(e){ AI_IMG_LOADING = false; }
   }
+  function _tryFillImg(el, cod){
+    var sync = getImageSync(cod);
+    if (sync){ applyImg(el, sync); return true; }
+    if (AI_IMG_CACHE[cod]){ applyImg(el, AI_IMG_CACHE[cod]); return true; }
+    return false;
+  }
   function fillCardImages(scope){
     try { aiLoadBackendImages();
       var els = scope.querySelectorAll('.ai-card-img[data-cod]');
       Array.prototype.forEach.call(els, function(el){
         var cod = el.getAttribute('data-cod');
-        var sync = getImageSync(cod);
-        if (sync){ applyImg(el, sync); return; }
-        if (AI_IMG_CACHE[cod]){ applyImg(el, AI_IMG_CACHE[cod]); return; }
-        idbGetImage(cod).then(function(d){ if (d) applyImg(el, d); });
+        if (_tryFillImg(el, cod)) return;
+        idbGetImage(cod).then(function(d){
+          if (d){ applyImg(el, d); return; }
+          var cod2 = el.getAttribute('data-cod2');
+          if (!cod2 || cod2 === cod) return;
+          if (_tryFillImg(el, cod2)) return;
+          idbGetImage(cod2).then(function(d2){ if (d2) applyImg(el, d2); });
+        });
       });
     } catch(e){}
   }
@@ -8147,7 +8157,9 @@ window.addEventListener('appinstalled', function() {
   function productCard(rec){
     var p = rec.p;
     var cod = String(p.cod);
-    var imgCod = String(p._imgCod || cod); // combos usan la foto de un producto componente
+    var imgCod = String(p._imgCod || cod); // combos: foto del componente como fallback
+    var cod2 = (imgCod !== cod) ? imgCod : '';
+    var logoFallback = p._imgLogo ? '<img src="https://moniquearnold.com.ar/assets/images/logo-monique.png" alt="Monique" style="width:100%;height:100%;object-fit:contain;">' : '';
     var e = getEnrich()[cod] || {};
     var reason = '';
     if (rec.reasons.length) reason = rec.reasons.slice(0,2).join(' · ');
@@ -8155,7 +8167,7 @@ window.addEventListener('appinstalled', function() {
     else reason = 'Pertenece a la categoría ' + (p.categoria || 'catálogo') + '.';
     var stockHtml = (rec.st > 0 && rec.hasStockData) ? '<span class="ai-card-stock">✓ Entrega inmediata</span>' : '';
     return '<div class="ai-card">'
-      + '<div class="ai-card-img" data-cod="' + esc(imgCod) + '">🧴</div>'
+      + '<div class="ai-card-img" data-cod="' + esc(cod) + '"' + (cod2 ? ' data-cod2="' + esc(cod2) + '"' : '') + '>' + logoFallback + (logoFallback ? '' : '🧴') + '</div>'
       + '<div class="ai-card-body">'
       +   '<div class="ai-card-name">' + esc(p.descripcion) + '</div>'
       +   '<div class="ai-card-meta">(cod. ' + esc(cod) + ')' + (p.categoria ? ' · ' + esc(p.categoria) : '') + '</div>'
@@ -9094,7 +9106,7 @@ function answer(q){
     var recs = show.map(function(p){
       var has = (st[String(p.cod)] || 0) > 0;
       var ic = comboImgCod(p.descripcion);
-      if (ic) p._imgCod = ic;
+      if (ic) p._imgCod = ic; else p._imgLogo = true;
       return { p: p, reasons: ['Combo'], st: has ? 1 : 0, hasStockData: true };
     });
     recommendBubble(recs, 'Te paso las tarjetas con foto y precio \u2728');
