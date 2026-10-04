@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v100-foto-puntual';
+  var SITE_VERSION = 'sv-2026-10-04-v101-combo6-agotado';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -9024,6 +9024,7 @@ function answer(q){
           var v = parseFloat(p.v) || 0;
           if (v <= 0 || String(p.n).length < 3) return; // pruebas sin precio
           if (/^producto cp/i.test(String(p.n))) return; // autogenerados sin datos
+          if (/combo\s*6/i.test(String(p.c))) return; // Combo 6 agotado: el asistente no lo informa
           var k = norm(String(p.c).replace(/\s+/g, '').toLowerCase());
           if (seen[k] !== undefined){
             var prev = out[seen[k]];
@@ -9100,8 +9101,9 @@ function answer(q){
     var extras = [];
     list.forEach(function(p){
       if (!p || !p.descripcion) return;
-      var d = norm(p.descripcion);
       var cod = norm(String(p.cod||''));
+      if (/combo\s*6/.test(cod)) return; // Combo 6 agotado: no informarlo como disponible
+      var d = norm(p.descripcion);
       if (d.indexOf('combo') !== -1 || cod.indexOf('combo') !== -1) cb.push(p);
     });
     if (cb.length < 4){
@@ -9125,6 +9127,7 @@ function answer(q){
       return '\ud83d\udc9a ' + String(p.descripcion).replace(/&/g,'&amp;').replace(/</g,'&lt;') + ' (cod. ' + p.cod + ') \u2014 ' + money(p.precio) + (has ? ' \ud83d\ude80 con stock: entrega inmediata' : ' \ud83d\udce6 a pedido: llega ' + CAMPAIGN.entrega);
     });
     var html = 'S\u00ed! Estos son los combos que tengo publicados \ud83c\udf81:<br><br>' + lines.join('<br>');
+    if (/combo\s*6/.test(norm(q))) html += '<br><br>El <b>Combo 6</b> (Perfume Diamond + Crema Diamond) est\u00e1 <b>agotado</b> \ud83d\ude4f';
     if (all.length > MAX) html += '<br><br>Hay ' + all.length + ' en total; pedime m\u00e1s si quer\u00e9s ver el resto.';
     botSay(html);
     S.aiMem.shownProducts = show;
