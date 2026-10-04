@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v101-combo6-agotado';
+  var SITE_VERSION = 'sv-2026-10-04-v102-combo6-ruteo';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -9231,7 +9231,11 @@ function answer(q){
 function aiRoute(q){
   var nq = norm(q);
   if (S.lead && S.lead.stage) { answer(q); return; }
-  if (S.awaitBuy && S.lastRecs && S.lastRecs.length) { answer(q); return; }
+  if (S.awaitBuy && S.lastRecs && S.lastRecs.length) {
+    // v102: si vuelve a preguntar por combos (p.ej. "tenes el combo 6?"), responder en local
+    if (/combo/.test(nq) && !/pdf/.test(nq)) { localComboAnswer(q); return; }
+    answer(q); return;
+  }
   if (nq.indexOf('/aprender') === 0 || nq.indexOf('/olvidar') === 0) { answer(q); return; }
   if (/pdf/.test(nq) && /(catalogo|lista|listado|producto|precio|hoja|entrega inmediata|stock|disponibl)/.test(nq)) { answer(q); return; }
   if (!S.lead && /(vendedor|vendedora|consejer|revend|quiero vender|me gustaria vender|sumarme|unirme|trabajar|ser parte|equipo|patrocinad)/.test(nq) && !/(precio|cuanto|cuota|como funciona)/.test(nq)) { answer(q); return; }
