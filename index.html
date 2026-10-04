@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v95-combos-tarjetas';
+  var SITE_VERSION = 'sv-2026-10-04-v96-fotos-combos';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -7832,7 +7832,7 @@ window.addEventListener('appinstalled', function() {
   S.aiConvId = null; try { localStorage.removeItem('monique_ai_conv_id'); } catch(e){}
 
   function aiVendedorCall(q, fallbackHtml, localFallback){
-    var list = getProducts().filter(function(p){ return String(p.tipo||'v').charAt(0) !== 'm' && String(p.cod||'').length > 0; });
+    var list = getProducts().filter(function(p){ return String(p.cod||'').length > 0; });
     var ENR = getEnrich();
     var catalog = list.map(function(p){
       var e = ENR[String(p.cod)] || {};
@@ -8147,6 +8147,7 @@ window.addEventListener('appinstalled', function() {
   function productCard(rec){
     var p = rec.p;
     var cod = String(p.cod);
+    var imgCod = String(p._imgCod || cod); // combos usan la foto de un producto componente
     var e = getEnrich()[cod] || {};
     var reason = '';
     if (rec.reasons.length) reason = rec.reasons.slice(0,2).join(' · ');
@@ -8154,7 +8155,7 @@ window.addEventListener('appinstalled', function() {
     else reason = 'Pertenece a la categoría ' + (p.categoria || 'catálogo') + '.';
     var stockHtml = (rec.st > 0 && rec.hasStockData) ? '<span class="ai-card-stock">✓ Entrega inmediata</span>' : '';
     return '<div class="ai-card">'
-      + '<div class="ai-card-img" data-cod="' + esc(cod) + '">🧴</div>'
+      + '<div class="ai-card-img" data-cod="' + esc(imgCod) + '">🧴</div>'
       + '<div class="ai-card-body">'
       +   '<div class="ai-card-name">' + esc(p.descripcion) + '</div>'
       +   '<div class="ai-card-meta">(cod. ' + esc(cod) + ')' + (p.categoria ? ' · ' + esc(p.categoria) : '') + '</div>'
@@ -9000,6 +9001,40 @@ function answer(q){
   }
   try { if (typeof fetch === 'function') aiLoadCustomProducts().catch(function(){}); } catch(e) {}
 
+  // ===== Combos: usar la foto del producto componente que ya existe en el catálogo =====
+  function comboImgCod(desc){
+    try {
+      var STOP = ['perfume','perf','parfum','femenino','femenina','femenin','masculino','masculin','crema','acondicionador','dije','set','combo','kit','esmalte','labial','gel','colonia','x','ml','unidades','cada','con','por','mas'];
+      var parts = norm(String(desc)).split('+'); // el primer componente suele ser el perfume
+      var words = [];
+      parts.forEach(function(pt, pi){
+        pt.split(/[^a-z0-9ñ]+/).forEach(function(w){
+          if (w.length >= 3 && STOP.indexOf(w) === -1 && words.indexOf(w) === -1) words.push(w);
+        });
+      });
+      if (!words.length) return null;
+      var cands = [];
+      getAllProductsRaw().forEach(function(p){
+        var d = norm(p.descripcion || '');
+        var score = 0;
+        words.forEach(function(w, wi){
+          if (d.indexOf(w) !== -1) score += (wi < 2 ? 3 : 1); // primeras palabras = producto principal
+        });
+        if (score > 0){
+          var ic = String(p.cod);
+          var hasImg = (getImageSync(ic) ? 1 : 0) + (AI_IMG_CACHE[ic] ? 1 : 0);
+          cands.push({ cod: ic, score: score, hasImg: hasImg });
+        }
+      });
+      if (!cands.length) return null;
+      cands.sort(function(a, b){
+        if (b.hasImg !== a.hasImg) return b.hasImg - a.hasImg;
+        return b.score - a.score;
+      });
+      return cands[0].cod;
+    } catch(e){ return null; }
+  }
+
   // ===== Respuesta local de COMBOS: busca en nombre y código, incluye productos manuales =====
   function localComboAnswer(q){
     var typing = botSay('\ud83d\udd0d Busco los combos del cat\u00e1logo...');
@@ -9058,6 +9093,8 @@ function answer(q){
     S._cardsOK = true;
     var recs = show.map(function(p){
       var has = (st[String(p.cod)] || 0) > 0;
+      var ic = comboImgCod(p.descripcion);
+      if (ic) p._imgCod = ic;
       return { p: p, reasons: ['Combo'], st: has ? 1 : 0, hasStockData: true };
     });
     recommendBubble(recs, 'Te paso las tarjetas con foto y precio \u2728');
