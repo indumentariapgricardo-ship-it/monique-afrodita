@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v93-manuales';
+  var SITE_VERSION = 'sv-2026-10-04-v94-combos';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -8410,6 +8410,11 @@ function generateCatalogPDF(mode, onDone){
     loadJsPDFLib(async function(){
       try {
         var list = getProducts().filter(function(p){ return p && p.descripcion; });
+    var _seenI = {};
+    list.forEach(function(p){ _seenI[String(p.cod)] = 1; });
+    AI_CUSTOM_PRODUCTS.forEach(function(p){
+      if (!_seenI[String(p.cod)]) { list.push(p); _seenI[String(p.cod)] = 1; }
+    });
         var ENR = getEnrich();
         var stockMap = getStock();
         if (mode === 'stock'){
@@ -8959,6 +8964,42 @@ function answer(q){
 // registro de vendedora paso a paso, armado de PDF, comandos del dueno)
 // o si Gemini no puede responder (error / sin respuesta).
   // ===== Respuesta local de ENTREGA INMEDIATA con el stock de Cuotas =====
+  // ===== Productos custom (combos y agregados) desde el backend =====
+  var AI_CUSTOM_PRODUCTS = [];
+  var _aiCustomDone = false;
+  function aiLoadCustomProducts(){
+    if (_aiCustomDone) return Promise.resolve();
+    return fetch('https://fable-2525a21e.base44.app/functions/customProductsSync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'getAll' })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.ok){
+        function _toProd(p){
+          return { cod: String(p.c), descripcion: String(p.n), precio: parseFloat(p.v) || 0, categoria: (p.cat || 'COMBOS'), tipo: 'v', _custom: true };
+        }
+        var seen = {};
+        var out = [];
+        (d.products || []).forEach(function(p){
+          if (!p || !p.n || !p.c) return;
+          var v = parseFloat(p.v) || 0;
+          if (v <= 0 || String(p.n).length < 3) return; // pruebas sin precio
+          if (/^producto cp/i.test(String(p.n))) return; // autogenerados sin datos
+          var k = norm(String(p.c).replace(/\s+/g, '').toLowerCase());
+          if (seen[k] !== undefined){
+            var prev = out[seen[k]];
+            if (String(p.n).length > String(prev.descripcion).length) out[seen[k]] = _toProd(p);
+            return;
+          }
+          seen[k] = out.length;
+          out.push(_toProd(p));
+        });
+        AI_CUSTOM_PRODUCTS = out;
+      }
+      _aiCustomDone = true;
+    }).catch(function(){ _aiCustomDone = true; });
+  }
+  try { if (typeof fetch === 'function') aiLoadCustomProducts().catch(function(){}); } catch(e) {}
+
   // ===== Respuesta local de COMBOS: busca en nombre y código, incluye productos manuales =====
   function localComboAnswer(q){
     var typing = botSay('\ud83d\udd0d Busco los combos del cat\u00e1logo...');
@@ -8972,13 +9013,15 @@ function answer(q){
       } catch(e2){ botSay('Ups, tuve un problema procesando eso \ud83d\ude05. Prob\u00e1 de nuevo con otras palabras.'); }
     };
     try {
-      loadGlobalStockParent().then(function(){ setTimeout(run, 80); }).catch(function(){ run(); });
+      Promise.all([loadGlobalStockParent(), aiLoadCustomProducts()]).then(function(){ setTimeout(run, 80); }).catch(function(){ run(); });
     } catch(e) { run(); }
     setTimeout(run, 4500); // seguro: nunca dejar sin respuesta
   }
   function localComboBuild(q){
     var st = getStock();
-    var list = getAllProductsRaw();
+    var _seenC = {};
+    getAllProductsRaw().forEach(function(p){ _seenC[String(p.cod)] = 1; });
+    var list = getAllProductsRaw().concat(AI_CUSTOM_PRODUCTS.filter(function(p){ return !_seenC[String(p.cod)]; }));
     var cb = [];
     var extras = [];
     list.forEach(function(p){
@@ -9033,6 +9076,11 @@ function answer(q){
   function localInmediataBuild(q){
     var st = getStock();
     var list = getProducts().filter(function(p){ return p && p.descripcion; });
+    var _seenI = {};
+    list.forEach(function(p){ _seenI[String(p.cod)] = 1; });
+    AI_CUSTOM_PRODUCTS.forEach(function(p){
+      if (!_seenI[String(p.cod)]) { list.push(p); _seenI[String(p.cod)] = 1; }
+    });
     var conStock = list.filter(function(p){ return (st[String(p.cod)] || 0) > 0; });
     if (!conStock.length){
       botSay('Ahora mismo no me queda stock para entrega inmediata \ud83d\ude15<br><br>Pero podés encargar cualquiera del catálogo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. ¿Querés que te recomiende algo? \ud83c\udf38');
