@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v94-combos';
+  var SITE_VERSION = 'sv-2026-10-04-v95-combos-tarjetas';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -9052,9 +9052,15 @@ function answer(q){
     });
     var html = 'S\u00ed! Estos son los combos que tengo publicados \ud83c\udf81:<br><br>' + lines.join('<br>');
     if (all.length > MAX) html += '<br><br>Hay ' + all.length + ' en total; pedime m\u00e1s si quer\u00e9s ver el resto.';
-    html += '<br><br>Si quer\u00e9s verlos con foto, decime *mostrame* y te paso las tarjetas \u2728';
     botSay(html);
     S.aiMem.shownProducts = show;
+    // tarjetas con foto: siempre al preguntar por combos
+    S._cardsOK = true;
+    var recs = show.map(function(p){
+      var has = (st[String(p.cod)] || 0) > 0;
+      return { p: p, reasons: ['Combo'], st: has ? 1 : 0, hasStockData: true };
+    });
+    recommendBubble(recs, 'Te paso las tarjetas con foto y precio \u2728');
   }
   function localInmediataAnswer(q){
     // refrescar siempre el stock del servidor antes de responder (el local manda si ya existe)
