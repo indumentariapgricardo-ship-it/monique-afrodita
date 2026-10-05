@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-04-v102-combo6-ruteo';
+  var SITE_VERSION = 'sv-2026-10-05-v103-etiquetas-precio';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -491,6 +491,13 @@ window.addEventListener('error', function(e){
       <input type="number" id="custom-paper-w" value="55" min="20" max="300" oninput="setCustomPaper(this)" style="width:70px;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;text-align:center;" placeholder="ancho">
       <span style="color:#6b7280;">x</span>
       <input type="number" id="custom-paper-h" value="44" min="20" max="500" oninput="setCustomPaper(this)" style="width:70px;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;text-align:center;" placeholder="alto">
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:0.82rem;color:#374151;font-weight:700;">Etiqueta:</span>
+      <select id="label-mode-select" onchange="setLabelMode(this.value)" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;">
+        <option value="name">Código + nombre (actual)</option>
+        <option value="price">Precio (código de barras + precio)</option>
+      </select>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
       <select id="print-cat-filter" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;">
@@ -1606,7 +1613,7 @@ window.addEventListener('error', function(e){
   // Load JsBarcode library lazily
   let jsBarcodeLoaded = false;
   function loadJsBarcode(callback) {
-    if (jsBarcodeLoaded && typeof JsBarcode !== 'undefined') { callback(); return; }
+    if (typeof JsBarcode !== 'undefined') { jsBarcodeLoaded = true; callback(); return; }
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
     script.onload = () => { jsBarcodeLoaded = true; callback(); };
@@ -1651,6 +1658,15 @@ window.addEventListener('error', function(e){
         products.forEach((p, i) => {
           const safeId = 'bc-' + i + '-' + p.c.replace(/[^a-zA-Z0-9]/g, '');
           const safeName = (p.n || '').substring(0, 18);
+          if (getLabelMode() === 'price') {
+            var precio = labelPrice(p) || '';
+            html += `
+            <div style="border:1.5px solid #333;padding:3px 2px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;height:62px;overflow:hidden;box-sizing:border-box;border-radius:2px;">
+              <svg id="${safeId}" style="display:block;width:100%;max-width:95px;"></svg>
+              <div style="font-size:0.62rem;color:#111;margin-top:2px;font-weight:800;">${precio}</div>
+            </div>
+          `;
+          } else {
           html += `
             <div style="border:1.5px solid #333;padding:3px 2px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;height:62px;overflow:hidden;box-sizing:border-box;border-radius:2px;">
               <svg id="${safeId}" style="display:block;width:100%;max-width:95px;"></svg>
@@ -1658,6 +1674,7 @@ window.addEventListener('error', function(e){
               <div style="font-size:0.42rem;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">${safeName}</div>
             </div>
           `;
+          }
         });
         html += '</div>';
         html += '<p style="text-align:center;color:#9ca3af;font-size:0.75rem;margin-top:10px;">' + products.length + ' etiquetas en total. Toca "Descargar PDF" para generar el archivo imprimible.</p>';
@@ -1687,8 +1704,12 @@ window.addEventListener('error', function(e){
             var cw = Math.round(L.cellW * scale), ch = Math.round(L.cellH * scale);
             html += '<div style="position:absolute;left:' + left + 'px;top:' + top + 'px;width:' + cw + 'px;height:' + ch + 'px;border:1.5px solid #333;box-sizing:border-box;border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px;">';
             html += '<svg id="' + safeId + '" style="display:block;width:90%;max-width:' + (cw - 8) + 'px;"></svg>';
-            html += '<div style="font-size:' + (bigCell ? '0.85rem' : '0.55rem') + ';color:#333;margin-top:1px;font-weight:700;">' + p.c + '</div>';
-            html += '<div style="font-size:' + (bigCell ? '0.7rem' : '0.42rem') + ';color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">' + safeName + '</div>';
+            if (getLabelMode() === 'price') {
+              html += '<div style="font-size:' + (bigCell ? '1rem' : '0.62rem') + ';color:#111;margin-top:2px;font-weight:800;">' + (labelPrice(p) || '') + '</div>';
+            } else {
+              html += '<div style="font-size:' + (bigCell ? '0.85rem' : '0.55rem') + ';color:#333;margin-top:1px;font-weight:700;">' + p.c + '</div>';
+              html += '<div style="font-size:' + (bigCell ? '0.7rem' : '0.42rem') + ';color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">' + safeName + '</div>';
+            }
             html += '</div>';
           }
           html += '</div>';
@@ -1725,7 +1746,7 @@ window.addEventListener('error', function(e){
   // ============ THERMAL PDF GENERATION ============
   let jsPDFLoaded = false;
   function loadJsPDFLib(callback) {
-    if (jsPDFLoaded && typeof window.jspdf !== 'undefined') { callback(); return; }
+    if (typeof window.jspdf !== 'undefined') { jsPDFLoaded = true; callback(); return; }
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
     script.onload = () => { jsPDFLoaded = true; callback(); };
@@ -1755,6 +1776,21 @@ window.addEventListener('error', function(e){
         btn.disabled = false;
       });
     });
+  }
+
+  // ===== Modo de etiqueta: 'name' (código + nombre) | 'price' (barcode + precio, sin número) =====
+  window._labelMode = window._labelMode || 'name';
+  function getLabelMode() { return window._labelMode || 'name'; }
+  function setLabelMode(v) {
+    window._labelMode = (v === 'price') ? 'price' : 'name';
+    var sel = document.getElementById('label-mode-select');
+    if (sel) sel.value = window._labelMode;
+    refreshSheetPreview();
+  }
+  function labelPrice(p) {
+    var v = parseFloat(p && p.v);
+    if (isNaN(v) || v <= 0) return '';
+    return '$' + Math.round(v).toLocaleString('es-AR');
   }
 
   // ===== Tamaño de papel: la etiqueta (3,3 x 2 cm) se acomoda sola al papel elegido =====
@@ -1883,6 +1919,17 @@ window.addEventListener('error', function(e){
         try { doc.addImage(dataUrl, 'PNG', bcX, bcY, bcW, bcH); } catch(e) {}
       }
 
+      if (getLabelMode() === 'price') {
+        // Modo PRECIO: barcode CODE128 del código + precio (sin número ni nombre)
+        var precioTxt = labelPrice(p);
+        if (precioTxt) {
+          doc.setFontSize(bigLabel ? 13 : (L.isPlanilla ? 7.5 : 8.5));
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(0, 0, 0);
+          var py = y + (bigLabel ? (bcY - y + bcH + 6) : (L.isPlanilla ? (bcY - y + bcH + 4) : (bcY - y + bcH + 4.5)));
+          doc.text(precioTxt, x + L.cellW / 2, py, { align: 'center' });
+        }
+      } else {
       // Code number
       doc.setFontSize(bigLabel ? 10 : 7);
       doc.setFont(undefined, 'bold');
@@ -1895,6 +1942,7 @@ window.addEventListener('error', function(e){
       const name = (p.n || '').substring(0, bigLabel ? 45 : 30);
       const lines = doc.splitTextToSize(name, bigLabel ? (L.cellW - 8) : (L.cellW - 2));
       doc.text(lines.slice(0, 2), x + L.cellW / 2, y + (bigLabel ? (bcY - y + bcH + 7.5) : (L.isPlanilla ? 15.5 : 17.5)), { align: 'center' });
+      }
     });
 
     try {
@@ -2005,8 +2053,8 @@ window.addEventListener('error', function(e){
     qtyInput.value = '1';
     codeInput.focus();
 
-    // Look up product name in background
-    lookupProductName(code, function(name) {
+    // Look up product name and price in background
+    lookupProductName(code, function(name, price) {
       var item = window._manualLabels.find(function(l) { return String(l.c) === String(code); });
       if (item) {
         if (name && !/^Producto \d/.test(name)) {
@@ -2014,6 +2062,7 @@ window.addEventListener('error', function(e){
         } else {
           item.notFound = true;
         }
+        if (price && parseFloat(price) > 0) item.v = parseFloat(price);
       }
       renderManualLabelsList();
     });
@@ -2029,7 +2078,7 @@ window.addEventListener('error', function(e){
           window.removeEventListener('message', handler);
           var products = e.data.products || [];
           var found = products.find(function(p) { return String(p.c) === String(code); });
-          callback(found ? (found.n || '') : '');
+          callback(found ? (found.n || '') : '', found ? (found.v || 0) : 0);
         }
       };
       window.addEventListener('message', handler);
@@ -2070,7 +2119,7 @@ window.addEventListener('error', function(e){
       html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:4px;background:#f9fafb;">'
         + '<div style="flex:1;">'
         + '<div style="font-weight:600;font-size:0.82rem;">' + item.c + ' <span style="color:#999;font-weight:400;font-size:0.72rem;">' + (item.n ? item.n.substring(0,25) : '...') + '</span></div>'
-        + '<div style="font-size:0.72rem;color:#6b7280;">Cantidad: ' + item.qty + '</div>'
+        + '<div style="font-size:0.72rem;color:#6b7280;">Cantidad: ' + item.qty + (item.v ? ' &middot; Precio: <b style="color:#374151;">$' + Math.round(item.v).toLocaleString('es-AR') + '</b>' : '') + '</div>'
         + warn
         + '</div>'
         + '<button onclick="removeManualLabel(' + i + ')" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;">✕</button>'
@@ -2091,7 +2140,7 @@ window.addEventListener('error', function(e){
     var labelsList = [];
     window._manualLabels.forEach(function(item) {
       for (var j = 0; j < item.qty; j++) {
-        labelsList.push({ c: String(item.c), n: item.n || '' });
+        labelsList.push({ c: String(item.c), n: item.n || '', v: item.v || 0 });
       }
     });
 
