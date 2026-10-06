@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-05-v103-etiquetas-precio';
+  var SITE_VERSION = 'sv-2026-10-06-v105-escaner-visor';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -961,15 +961,29 @@ window.addEventListener('error', function(e){
   let scannerInstance = null;
   let html5QrCode = null;
 
+  // v104: precargar la libreria del escaner en segundo plano para que la
+  // primera apertura no dependa de la red (unpkg suele ser lento)
+  (function preloadScannerLib() {
+    function inject() {
+      if (typeof Html5Qrcode !== 'undefined') return;
+      var s = document.createElement('script');
+      s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+      s.async = true;
+      document.head.appendChild(s);
+    }
+    if (document.readyState === 'complete') setTimeout(inject, 2500);
+    else window.addEventListener('load', function() { setTimeout(inject, 2500); });
+  })();
+
   barScan.addEventListener('click', () => {
     _unlockScannerAudio(); // Unlock audio during user gesture (required for iOS silent mode)
     document.getElementById('scanner-overlay').style.display = 'flex';
     document.getElementById('scanner-result').style.display = 'none';
     document.getElementById('scanner-manual-input').value = '';
-    // Ensure product data iframe (cuotas) is loaded BEFORE scanning, even if
-    // the user never visited "Quiero comprar en cuotas" - otherwise lookups fail silently
-    loadFrame('cuotas', () => {});
+    // v104: la camara arranca PRIMERO (no compite con el arranque del iframe
+    // de cuotas, que es pesado) y el catalogo se pre-carga 1s despues
     startScanner();
+    setTimeout(function() { loadFrame('cuotas', function() {}); }, 1000);
   });
 
   function startScanner() {
@@ -992,6 +1006,8 @@ window.addEventListener('error', function(e){
 
   var _scannerStream = null;
   var _torchOn = false;
+  var _lastScanCode = null;
+  var _lastScanTime = 0;
 
   function toggleTorch() {
     if (!_scannerStream) return;
@@ -1017,10 +1033,19 @@ window.addEventListener('error', function(e){
     
     // Try native BarcodeDetector first (works on newer Chrome/Android)
     if ('BarcodeDetector' in window) {
+      // v105: visor estilo Mercado Libre: recuadro central donde se toma el
+      // codigo, oscurecido suave alrededor, video a brillo normal
       container.innerHTML = '<div style="width:100%;max-width:400px;margin:0 auto;position:relative;">' +
-        '<video id="scanner-video" style="width:100%;border-radius:8px;" autoplay playsinline></video>' +
-        '<div style="position:absolute;inset:50% 20% auto 20%;height:2px;background:#22c55e;box-shadow:0 0 8px #22c55e;"></div>' +
-        '<div style="position:absolute;top:8px;left:8px;right:8px;text-align:center;color:#fff;font-size:0.8rem;background:rgba(0,0,0,0.5);padding:4px;border-radius:6px;">Apunta al codigo de barras</div>' +
+        '<video id="scanner-video" style="width:100%;border-radius:8px;display:block;" autoplay playsinline></video>' +
+        '<div style="position:absolute;inset:0;pointer-events:none;">' +
+        '<div style="position:absolute;left:12%;right:12%;top:36%;bottom:40%;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,0.42);border:2px solid rgba(255,255,255,0.85);">' +
+        '<div style="position:absolute;top:-2px;left:-2px;width:26px;height:26px;border-top:4px solid #22c55e;border-left:4px solid #22c55e;border-top-left-radius:14px;"></div>' +
+        '<div style="position:absolute;top:-2px;right:-2px;width:26px;height:26px;border-top:4px solid #22c55e;border-right:4px solid #22c55e;border-top-right-radius:14px;"></div>' +
+        '<div style="position:absolute;bottom:-2px;left:-2px;width:26px;height:26px;border-bottom:4px solid #22c55e;border-left:4px solid #22c55e;border-bottom-left-radius:14px;"></div>' +
+        '<div style="position:absolute;bottom:-2px;right:-2px;width:26px;height:26px;border-bottom:4px solid #22c55e;border-right:4px solid #22c55e;border-bottom-right-radius:14px;"></div>' +
+        '</div>' +
+        '<div style="position:absolute;bottom:2px;left:8px;right:8px;text-align:center;color:#fff;font-size:0.78rem;background:rgba(0,0,0,0.45);padding:5px;border-radius:8px;">Aimá el codigo de barras dentro del recuadro</div>' +
+        '</div>' +
         '</div>';
       
       const video = document.getElementById('scanner-video');
@@ -1029,8 +1054,8 @@ window.addEventListener('error', function(e){
       navigator.mediaDevices.getUserMedia({ 
         video: { 
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         } 
       })
         .then(stream => {
@@ -1056,13 +1081,36 @@ window.addEventListener('error', function(e){
               setTimeout(detectLoop, 100);
               return;
             }
-            detector.detect(video)
+            // v105: detectar SOLO dentro del recuadro (estilo ML)
+            Promise.resolve().then(function() {
+              try {
+                var vw = video.videoWidth, vh = video.videoHeight;
+                if (!vw || !vh) return detector.detect(video);
+                if (!window._vfCanvas) window._vfCanvas = document.createElement('canvas');
+                var cv = window._vfCanvas;
+                var sx = Math.floor(vw * 0.12), sw = Math.floor(vw * 0.76);
+                var sy = Math.floor(vh * 0.36), sh = Math.floor(vh * 0.24);
+                cv.width = sw; cv.height = sh;
+                cv.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+                return detector.detect(cv);
+              } catch(e) {
+                return detector.detect(video);
+              }
+            })
               .then(barcodes => {
                 if (barcodes && barcodes.length > 0) {
+                  var raw = String(barcodes[0].rawValue).trim();
+                  // v104: dedupe - el mismo codigo no se re-dispara por 5s
+                  var now = Date.now();
+                  if (_lastScanCode === raw && (now - _lastScanTime) < 5000) {
+                    setTimeout(detectLoop, 300);
+                    return;
+                  }
+                  _lastScanCode = raw; _lastScanTime = now;
                   scanning = false;
                   scannerBeep();
-                  stream.getTracks().forEach(t => t.stop());
-                  lookupCode(barcodes[0].rawValue);
+                  // v104: NO cerrar la camara: queda viva para el proximo escaneo
+                  lookupCode(raw);
                   return;
                 }
                 // Small delay between detection attempts (250ms)
@@ -1070,6 +1118,13 @@ window.addEventListener('error', function(e){
               })
               .catch(() => setTimeout(detectLoop, 250));
           }
+          window._resumeScanDetection = function() {
+            scanning = true;
+            _lastScanTime = Date.now(); // reinicia ventana de dedupe
+            try { video.play(); } catch(e) {} // v105: evita video negro al volver
+            setTimeout(detectLoop, 250);
+          };
+          window._scannerStreamLive = true;
           video.addEventListener('loadedmetadata', () => {
             video.play();
             setTimeout(detectLoop, 200);
@@ -1088,14 +1143,22 @@ window.addEventListener('error', function(e){
     container.innerHTML = '<div id="qr-reader" style="width:100%;max-width:400px;margin:0 auto;"></div>';
     try {
       html5QrCode = new Html5Qrcode("qr-reader");
+      var _qrPaused = false;
       html5QrCode.start(
         { facingMode: "environment" },
         { fps: 15, qrbox: { width: 300, height: 150 }, aspectRatio: 1.33 },
         (decodedText) => {
+          // v104: la libreria dispara varias veces el mismo codigo; dedupe 5s
+          var raw = String(decodedText).trim();
+          var now = Date.now();
+          if (_lastScanCode === raw && (now - _lastScanTime) < 5000) return;
+          _lastScanCode = raw; _lastScanTime = now;
           scannerBeep();
-          html5QrCode.stop().then(() => {
-            lookupCode(decodedText);
-          }).catch(() => { lookupCode(decodedText); });
+          // v104: PAUSAR (no detener): la camara queda viva
+          if (_qrPaused) return;
+          _qrPaused = true;
+          try { html5QrCode.pause(true); } catch(e) {}
+          lookupCode(raw);
         },
         (err) => {}
       ).then(function() {
@@ -1114,6 +1177,12 @@ window.addEventListener('error', function(e){
             }
           }
         } catch(e) {}
+        window._resumeScanDetection = function() {
+          _qrPaused = false;
+          _lastScanTime = Date.now();
+          try { html5QrCode.resume(); } catch(e2) {}
+        };
+        window._scannerStreamLive = true;
       }).catch((e) => {
         container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;font-size:0.85rem;text-align:center;padding:20px;gap:8px;">' +
           '<span>No se pudo acceder a la camara.</span>' +
@@ -1132,6 +1201,9 @@ window.addEventListener('error', function(e){
     cancelScannerAutoRestart();
     _torchOn = false;
     _scannerStream = null;
+    window._scannerStreamLive = false;
+    window._resumeScanDetection = null;
+    _lastScanCode = null; _lastScanTime = 0;
     var torchBtn = document.getElementById('scanner-torch-btn');
     if (torchBtn) { torchBtn.style.display = 'none'; torchBtn.style.background = 'rgba(255,255,255,0.15)'; }
     if (html5QrCode) {
@@ -1152,12 +1224,24 @@ window.addEventListener('error', function(e){
     cancelScannerAutoRestart();
     document.getElementById('scanner-result').style.display = 'none';
     document.getElementById('scanner-manual-input').value = '';
+    // v104: si la camara sigue viva (modo supermercado), reanudar deteccion
+    // sin volver a abrir la camara (ahorra 2-4 segundos por escaneo)
+    if (window._scannerStreamLive && typeof window._resumeScanDetection === 'function') {
+      document.getElementById('scanner-container').style.display = '';
+      window._resumeScanDetection();
+      return;
+    }
     startScanner();
   }
 
+  var _lookupFallbackTimer = null;
+  function clearLookupFallback() {
+    if (_lookupFallbackTimer) { clearTimeout(_lookupFallbackTimer); _lookupFallbackTimer = null; }
+  }
   function lookupCode(code) {
     code = String(code).trim();
     if (!code) return;
+    clearLookupFallback();
     lookupResultReceived = false;
 
     // Make sure cuotas iframe (holds full product catalog) is actually loaded first
@@ -1175,18 +1259,21 @@ window.addEventListener('error', function(e){
         if (frames['home'] && frames['home'].contentWindow) {
           frames['home'].contentWindow.postMessage({ action: 'lookup-product', code: code }, '*');
         }
-        if (lookupTries < 8 && !lookupResultReceived) setTimeout(tryLookup, 300);
+        // v104: ventana de reintentos mas larga (el iframe pesado puede tardar en arrancar)
+        if (lookupTries < 16 && !lookupResultReceived) setTimeout(tryLookup, 500);
       }
       tryLookup();
     });
 
-    // Fallback: if no response in 5 seconds (extra time for frame to boot), show "not found"
-    setTimeout(function() {
+    // v104: fallback unico y cancelable: solo si NADIE respondio, y se cancela
+    // en cuanto llega un resultado (mata el bug "mostró el producto y despues
+    // apareció No encontrado" por un segundo timer de un escaneo duplicado)
+    _lookupFallbackTimer = setTimeout(function() {
       if (!lookupResultReceived) {
         console.log('Scanner: no response from iframes, showing not found');
         showScannerResult({ code: code, name: '', price: 0, stock: -1 }, 'fallback');
       }
-    }, 5000);
+    }, 9000);
   }
 
   // Listen for product lookup results from iframes
@@ -1196,6 +1283,7 @@ window.addEventListener('error', function(e){
   window.addEventListener('message', (e) => {
     if (e.data && e.data.action === 'product-lookup-result' && !lookupResultReceived) {
       lookupResultReceived = true;
+      clearLookupFallback();
       // Enrich product with gan_pct from PDF_PRODUCTS if not provided by iframe
       var _prod = e.data.product || {};
       if (!_prod.gan_pct && _prod.code) {
@@ -1258,22 +1346,37 @@ window.addEventListener('error', function(e){
             + '<div style="font-size:0.88rem;font-weight:600;color:#374151;margin-bottom:6px;">¿Cuantas unidades hay?</div>'
             + '<div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:12px;">'
             + '<button onclick="window._faltQtyAdj(-1)" style="width:44px;height:44px;border:1px solid #d1d5db;border-radius:10px;background:#fff;cursor:pointer;font-size:1.3rem;font-weight:700;color:#6b7280;">-</button>'
-            + '<input type="number" id="falt-qty-input" value="1" min="0" style="width:80px;height:44px;text-align:center;font-size:1.4rem;font-weight:700;border:2px solid #2563eb;border-radius:10px;" onkeydown="if(event.key===\'Enter\'){window._faltQtyConfirm()}" />'
+            + '<input type="number" id="falt-qty-input" value="1" min="0" style="width:80px;height:44px;text-align:center;font-size:1.4rem;font-weight:700;border:2px solid #2563eb;border-radius:10px;" oninput="window._faltCancelAuto()" onkeydown="if(event.key===\'Enter\'){window._faltQtyConfirm()}" />'
             + '<button onclick="window._faltQtyAdj(1)" style="width:44px;height:44px;border:1px solid #d1d5db;border-radius:10px;background:#fff;cursor:pointer;font-size:1.3rem;font-weight:700;color:#2563eb;">+</button>'
             + '</div>';
           var btns = document.querySelector('#scanner-result > div:last-child');
           if (btns) {
             btns.style.display = '';
-            btns.innerHTML = '<button onclick="window._faltQtyConfirm()" style="flex:2;padding:12px;background:#059669;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:0.95rem;cursor:pointer;">✅ Confirmar</button><button onclick="cancelScannerAutoRestart();restartScanner()" style="flex:1;padding:12px;background:#6b7280;color:#fff;border:none;border-radius:10px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancelar</button>';
+            btns.innerHTML = '<button id="falt-qty-confirm-btn" onclick="window._faltQtyConfirm()" style="flex:2;padding:12px;background:#059669;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:0.95rem;cursor:pointer;">✅ Confirmar (8s)</button><button onclick="window._faltCancelAuto();cancelScannerAutoRestart();restartScanner()" style="flex:1;padding:12px;background:#6b7280;color:#fff;border:none;border-radius:10px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancelar</button>';
           }
+          window._faltCancelAuto = function() {
+            if (window._faltAutoInterval) { clearInterval(window._faltAutoInterval); window._faltAutoInterval = null; }
+            var _fb = document.getElementById('falt-qty-confirm-btn');
+            if (_fb) _fb.textContent = '✅ Confirmar';
+          };
+          var _fCount = 8;
+          window._faltAutoInterval = setInterval(function() {
+            var _fb = document.getElementById('falt-qty-confirm-btn');
+            if (!_fb || !_fb.isConnected) { clearInterval(window._faltAutoInterval); window._faltAutoInterval = null; return; }
+            _fCount--;
+            if (_fCount <= 0) { clearInterval(window._faltAutoInterval); window._faltAutoInterval = null; window._faltQtyConfirm(); return; }
+            _fb.textContent = '✅ Confirmar (' + _fCount + 's)';
+          }, 1000);
           setTimeout(function() { var _qi = document.getElementById('falt-qty-input'); if (_qi) { _qi.focus(); _qi.select(); } }, 100);
           window._faltQtyAdj = function(delta) {
+            window._faltCancelAuto();
             var inp = document.getElementById('falt-qty-input');
             if (!inp) return;
             var v = Math.max(0, (parseInt(inp.value) || 0) + delta);
             inp.value = v;
           };
           window._faltQtyConfirm = function() {
+            window._faltCancelAuto();
             var inp = document.getElementById('falt-qty-input');
             var qty = inp ? Math.max(0, parseInt(inp.value) || 0) : 0;
             faltantesScanMode = false;
@@ -1550,20 +1653,63 @@ window.addEventListener('error', function(e){
       }
     }
 
-    // VENTA MODE: add to venta cart instead of showing normal result
+    // VENTA MODE: ask quantity, add to venta cart, keep scanning
     if (typeof ventaMode !== 'undefined' && ventaMode) {
       if (product && product.name && product.price > 0) {
-        ventaAddProduct(product);
         var displayPrice = (ventaTipo === 'consejera') ? getConsejeraPrice(product) : product.price;
         var confirmColor = (ventaTipo === 'consejera') ? '#2563eb' : '#16a34a';
         var tipoLabel = (ventaTipo === 'consejera') ? ' (Consejera)' : '';
-        // Show brief confirmation and restart scanner
+        var _vCode = product.code || '';
+        var _vName = product.name || '';
+        var _vPrice = product.price || 0;
+        var _vImage = product.image || '';
+        cancelScannerAutoRestart();
         document.getElementById('scanner-result').style.display = 'flex';
-        document.getElementById('scanner-product-info').innerHTML = '<div style="text-align:center;padding:16px;"><div style="font-size:2rem;margin-bottom:8px;">✅</div><div style="font-weight:700;color:' + confirmColor + ';">' + product.name + '</div><div style="font-size:0.85rem;color:#6b7280;margin-top:4px;">Agregado a la venta' + tipoLabel + ' · $' + displayPrice + '</div></div>';
-        // Show "escanear otro" button
+        document.getElementById('scanner-product-info').innerHTML =
+          '<div style="padding:14px;">'
+          + '<div style="text-align:center;margin-bottom:10px;"><div style="font-weight:700;color:' + confirmColor + ';font-size:0.95rem;">' + _vName + '</div>'
+          + '<div style="font-size:0.78rem;color:#999;margin-top:2px;">Cod: ' + _vCode + ' · $' + displayPrice + tipoLabel + '</div></div>'
+          + '<div style="font-size:0.88rem;font-weight:600;color:#374151;margin-bottom:6px;">¿Cuantas unidades?</div>'
+          + '<div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:6px;">'
+          + '<button onclick="window._ventaQtyAdj(-1)" style="width:44px;height:44px;border:1px solid #d1d5db;border-radius:10px;background:#fff;cursor:pointer;font-size:1.3rem;font-weight:700;color:#6b7280;">-</button>'
+          + '<input type="number" id="venta-qty-input" value="1" min="1" style="width:80px;height:44px;text-align:center;font-size:1.4rem;font-weight:700;border:2px solid ' + confirmColor + ';border-radius:10px;" oninput="window._ventaCancelAuto()" onkeydown="if(event.key==\'Enter\'){window._ventaQtyConfirm()}" />'
+          + '<button onclick="window._ventaQtyAdj(1)" style="width:44px;height:44px;border:1px solid #d1d5db;border-radius:10px;background:#fff;cursor:pointer;font-size:1.3rem;font-weight:700;color:' + confirmColor + ';">+</button>'
+          + '</div></div>';
         var btns = document.querySelector('#scanner-result > div:last-child');
-        if (btns) btns.innerHTML = '<button onclick="cancelScannerAutoRestart();closeScanner();openVenta()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">Ver carrito</button><button onclick="cancelScannerAutoRestart();restartScanner()" style="flex:1;padding:10px;background:' + confirmColor + ';color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">Escanear otro</button>';
-        startScannerAutoRestart(4);
+        if (btns) btns.innerHTML = '<button id="venta-qty-confirm-btn" onclick="window._ventaQtyConfirm()" style="flex:2;padding:12px;background:' + confirmColor + ';color:#fff;border:none;border-radius:10px;font-weight:700;font-size:0.95rem;cursor:pointer;">✅ Agregar (8s)</button><button onclick="window._ventaCancelAuto();cancelScannerAutoRestart();closeScanner();openVenta()" style="flex:1;padding:12px;background:#6b7280;color:#fff;border:none;border-radius:10px;font-weight:600;font-size:0.85rem;cursor:pointer;">Ver carrito</button>';
+        setTimeout(function() { var _qi = document.getElementById('venta-qty-input'); if (_qi) { _qi.focus(); _qi.select(); } }, 100);
+        window._ventaQtyAdj = function(delta) {
+          window._ventaCancelAuto();
+          var inp = document.getElementById('venta-qty-input');
+          if (!inp) return;
+          var v = Math.max(1, (parseInt(inp.value) || 1) + delta);
+          inp.value = v;
+        };
+        window._ventaCancelAuto = function() {
+          if (window._ventaAutoInterval) { clearInterval(window._ventaAutoInterval); window._ventaAutoInterval = null; }
+          var _vb = document.getElementById('venta-qty-confirm-btn');
+          if (_vb) _vb.textContent = '✅ Agregar';
+        };
+        // v105: si no pone cantidad en 8s, agrega lo que figura y sigue escaneando
+        var _vCount = 8;
+        window._ventaAutoInterval = setInterval(function() {
+          var _vb = document.getElementById('venta-qty-confirm-btn');
+          if (!_vb || !_vb.isConnected) { clearInterval(window._ventaAutoInterval); window._ventaAutoInterval = null; return; }
+          _vCount--;
+          if (_vCount <= 0) { clearInterval(window._ventaAutoInterval); window._ventaAutoInterval = null; window._ventaQtyConfirm(); return; }
+          _vb.textContent = '✅ Agregar (' + _vCount + 's)';
+        }, 1000);
+        window._ventaQtyConfirm = function() {
+          window._ventaCancelAuto();
+          var inp = document.getElementById('venta-qty-input');
+          var qty = inp ? Math.max(1, parseInt(inp.value) || 1) : 1;
+          ventaAddProduct(_vCode ? { code: _vCode, name: _vName, price: _vPrice, stock: product.stock || 0, image: _vImage, gan_pct: product.gan_pct } : product, qty);
+          // confirmación breve y escaneo continúa
+          document.getElementById('scanner-product-info').innerHTML = '<div style="text-align:center;padding:16px;"><div style="font-size:2rem;margin-bottom:8px;">✅</div><div style="font-weight:700;color:' + confirmColor + ';">' + _vName + '</div><div style="font-size:0.85rem;color:#6b7280;margin-top:4px;">+' + qty + ' a la venta' + tipoLabel + ' · $' + (displayPrice * qty) + '</div></div>';
+          var btns2 = document.querySelector('#scanner-result > div:last-child');
+          if (btns2) btns2.innerHTML = '<button onclick="cancelScannerAutoRestart();closeScanner();openVenta()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">Ver carrito</button><button onclick="cancelScannerAutoRestart();restartScanner()" style="flex:1;padding:10px;background:' + confirmColor + ';color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">Escanear otro</button>';
+          startScannerAutoRestart(3);
+        };
         return;
       } else {
         var nfColor = (ventaTipo === 'consejera') ? '#2563eb' : '#22c55e';
@@ -1606,6 +1752,11 @@ window.addEventListener('error', function(e){
     }
     resultDiv.style.display = 'flex';
     document.getElementById('scanner-container').style.display = 'none';
+    // v104: modo supermercado - la ficha se muestra 4 segundos y el escaneo
+    // reanuda solo (la camara queda viva). El mismo codigo no se repite (dedupe 5s)
+    var _keepBtns = document.querySelector('#scanner-result > div:last-child');
+    if (_keepBtns) _keepBtns.innerHTML = '<button onclick="cancelScannerAutoRestart();closeScanner()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">✕ Cerrar</button><button onclick="cancelScannerAutoRestart();restartScanner()" style="flex:1;padding:10px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;">Escaneando de nuevo...</button>';
+    startScannerAutoRestart(4);
     setTimeout(() => { lookupResultReceived = false; }, 2000);
   }
 
@@ -3389,11 +3540,13 @@ window.addEventListener('error', function(e){
 
   function openVentaScanner() {
     // Open the scanner in venta mode
+    ventaMode = true;
     document.getElementById('scanner-overlay').style.display = 'flex';
     document.getElementById('scanner-result').style.display = 'none';
     document.getElementById('scanner-manual-input').value = '';
-    loadFrame('cuotas', () => {});
+    // v105: camara primero, catalogo 1s despues (apertura mas rapida)
     startScanner();
+    setTimeout(function() { loadFrame('cuotas', function() {}); }, 1000);
   }
 
   function ventaAddManual(code) {
@@ -3424,8 +3577,9 @@ window.addEventListener('error', function(e){
     }, 3000);
   }
 
-  function ventaAddProduct(product) {
+  function ventaAddProduct(product, qty) {
     // product has: name, code, price, stock, image, gan_pct
+    qty = Math.max(1, parseInt(qty) || 1);
     // Apply consejera pricing if in consejera mode
     var finalPrice = product.price;
     if (ventaTipo === 'consejera') {
@@ -3433,14 +3587,14 @@ window.addEventListener('error', function(e){
     }
     const existing = ventaCart.find(x => String(x.code) === String(product.code));
     if (existing) {
-      existing.cantidad += 1;
+      existing.cantidad += qty;
     } else {
       ventaCart.push({
         code: product.code,
         name: product.name,
         price: finalPrice,
         originalPrice: product.price,
-        cantidad: 1,
+        cantidad: qty,
         stock: product.stock || 0,
         tipo: ventaTipo
       });
