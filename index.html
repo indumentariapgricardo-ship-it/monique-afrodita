@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-08-v106-home-filtro-m';
+  var SITE_VERSION = 'sv-2026-10-08-v107-combos-disponibles';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -9311,6 +9311,18 @@ function answer(q){
   }
 
   // ===== Respuesta local de COMBOS: busca en nombre y código, incluye productos manuales =====
+  // v107: el stock de los combos se lee SIEMPRE del servidor (claves normalizadas,
+  // 'Combo 4' == 'combo4'); el cache local de cada telefono puede estar desactualizado.
+  var _comboSrv = null;
+  function _comboSrvFetch(){
+    return fetch(STOCK_API_URL).then(function(r){ return r.json(); }).then(function(d){
+      var norm2 = {};
+      if (d && d.ok && d.stock) {
+        Object.keys(d.stock).forEach(function(k){ norm2[String(k).replace(/\s+/g,'').toLowerCase()] = d.stock[k]; });
+        _comboSrv = norm2;
+      } else { _comboSrv = null; }
+    }).catch(function(){ _comboSrv = null; });
+  }
   function localComboAnswer(q){
     var typing = botSay('\ud83d\udd0d Busco los combos del cat\u00e1logo...');
     var _done = false;
@@ -9323,12 +9335,19 @@ function answer(q){
       } catch(e2){ botSay('Ups, tuve un problema procesando eso \ud83d\ude05. Prob\u00e1 de nuevo con otras palabras.'); }
     };
     try {
-      Promise.all([loadGlobalStockParent(), aiLoadCustomProducts()]).then(function(){ setTimeout(run, 80); }).catch(function(){ run(); });
+      Promise.all([loadGlobalStockParent(), aiLoadCustomProducts(), _comboSrvFetch()]).then(function(){ setTimeout(run, 80); }).catch(function(){ run(); });
     } catch(e) { run(); }
     setTimeout(run, 4500); // seguro: nunca dejar sin respuesta
   }
   function localComboBuild(q){
     var st = getStock();
+    // v107: stock real (servidor primero, claves normalizadas sin espacios)
+    function comboStockOf(p){
+      var k = String(p.cod||'').replace(/\s+/g,'').toLowerCase();
+      if (_comboSrv) return parseInt(_comboSrv[k]) || 0;
+      if (st[k] !== undefined) return parseInt(st[k]) || 0;
+      return st[String(p.cod)] || 0;
+    }
     var _seenC = {};
     getAllProductsRaw().forEach(function(p){ _seenC[String(p.cod)] = 1; });
     var list = getAllProductsRaw().concat(AI_CUSTOM_PRODUCTS.filter(function(p){ return !_seenC[String(p.cod)]; }));
@@ -9342,12 +9361,12 @@ function answer(q){
       if (d.indexOf('combo') !== -1 || cod.indexOf('combo') !== -1) cb.push(p);
     });
     if (cb.length < 4){
-      // combos con otro nombre habitual (set/duo de 2 o 3 productos)
+      // combos con otro nombre habitual (set/duo de 2 o 3 productos), solo con stock
       list.forEach(function(p){
         if (!p || !p.descripcion) return;
         var d = norm(p.descripcion);
         var isMulti = /\bc\/u\b|c\/u|\+|\bx\s?2\b|\bx\s?3\b/.test(d);
-        if (/\bset\b|\bduo\b/.test(d) && isMulti && cb.indexOf(p) === -1) extras.push(p);
+        if (/\bset\b|\bduo\b/.test(d) && isMulti && cb.indexOf(p) === -1 && comboStockOf(p) > 0) extras.push(p);
       });
     }
     var all = cb.concat(extras);
@@ -9355,24 +9374,57 @@ function answer(q){
       botSay('Ahora no tengo combos publicados en el cat\u00e1logo \ud83d\ude15<br><br>Si me dec\u00eds qu\u00e9 productos te interesan (perfumes, cremas, maquillaje), te digo lo que hay con stock para entrega inmediata o lo que se puede encargar por cat\u00e1logo.');
       return;
     }
+    // v107: detectar si preguntan por UN combo puntual ("ten\u00e9s el combo 1?")
+    var _numWord = { uno:'1', dos:'2', tres:'3', cuatro:'4', cinco:'5', seis:'6', siete:'7', ocho:'8', nueve:'9' };
+    var mq = norm(q);
+    var numM = mq.match(/combo\s*([0-9]+)/) || (function(){
+      var wm = mq.match(/combo\s+(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b/);
+      return wm ? [wm[0], _numWord[wm[1]]] : null;
+    })();
+    if (numM){
+      var nW = String(numM[1]);
+      var puntual = null;
+      for (var i = 0; i < cb.length; i++){
+        if (String(cb[i].cod).replace(/\s+/g,'').toLowerCase().indexOf('combo' + nW) === 0) { puntual = cb[i]; break; }
+      }
+      if (puntual){
+        if (comboStockOf(puntual) > 0){
+          var lin = '\ud83d\udc9a <b>' + String(puntual.descripcion).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</b> \u2014 ' + money(puntual.precio) + ' \ud83d\ude80 disponible: entrega inmediata';
+          botSay('S\u00ed! Me queda el <b>Combo ' + nW + '</b> \u2728<br><br>' + lin + '<br><br>\u00bfTe lo agrego al pedido?');
+          S.aiMem.shownProducts = [puntual];
+          S._cardsOK = true;
+          var ic1 = comboImgCod(puntual.descripcion);
+          if (ic1) puntual._imgCod = ic1; else puntual._imgLogo = true;
+          recommendBubble([{ p: puntual, reasons: ['Combo'], st: 1, hasStockData: true }], 'Te paso la tarjeta \u2728');
+        } else {
+          botSay('El <b>Combo ' + nW + '</b> (' + String(puntual.descripcion).replace(/&/g,'&amp;').replace(/</g,'&lt;') + ') est\u00e1 <b>agotado</b> \ud83d\ude4f<br><br>Se vendi\u00f3 completo. Si quer\u00e9s, te muestro los combos que s\u00ed me quedan \ud83d\ude80');
+        }
+        return;
+      }
+    }
+    // v107: listar SOLO los combos disponibles (stock real > 0)
+    var avail = all.filter(function(p){ return comboStockOf(p) > 0; });
+    if (!avail.length){
+      botSay('Se me agotaron los combos por ahora \ud83d\ude4f<br><br>Puedo mostrarte perfumes y cremas con stock para entrega inmediata, o lo que se encarga por cat\u00e1logo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. \u00bfQu\u00e9 te interesa?');
+      return;
+    }
     var MAX = 8;
-    var show = all.slice(0, MAX);
+    var show = avail.slice(0, MAX);
     var lines = show.map(function(p){
-      var has = (st[String(p.cod)] || 0) > 0;
-      return '\ud83d\udc9a ' + String(p.descripcion).replace(/&/g,'&amp;').replace(/</g,'&lt;') + ' (cod. ' + p.cod + ') \u2014 ' + money(p.precio) + (has ? ' \ud83d\ude80 con stock: entrega inmediata' : ' \ud83d\udce6 a pedido: llega ' + CAMPAIGN.entrega);
+      return '\ud83d\udc9a <b>' + String(p.descripcion).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</b> (cod. ' + p.cod + ') \u2014 ' + money(p.precio) + ' \ud83d\ude80 disponible: entrega inmediata';
     });
-    var html = 'S\u00ed! Estos son los combos que tengo publicados \ud83c\udf81:<br><br>' + lines.join('<br>');
-    if (/combo\s*6/.test(norm(q))) html += '<br><br>El <b>Combo 6</b> (Perfume Diamond + Crema Diamond) est\u00e1 <b>agotado</b> \ud83d\ude4f';
-    if (all.length > MAX) html += '<br><br>Hay ' + all.length + ' en total; pedime m\u00e1s si quer\u00e9s ver el resto.';
+    var html = 'S\u00ed! Estos son los combos que me quedan disponibles \ud83c\udf81:<br><br>' + lines.join('<br>');
+    if (/combo\s*6/.test(mq)) html += '<br><br>El <b>Combo 6</b> (Perfume Diamond + Crema Diamond) est\u00e1 <b>agotado</b> \ud83d\ude4f';
+    if (/combo\s*1\b/.test(mq) && !avail.some(function(p){ return String(p.cod).replace(/\s+/g,'').toLowerCase().indexOf('combo1') === 0; })) html += '<br><br>El <b>Combo 1</b> ya se vendi\u00f3 \ud83d\ude4f';
+    if (avail.length > MAX) html += '<br><br>Hay ' + avail.length + ' en total; pedime m\u00e1s si quer\u00e9s ver el resto.';
     botSay(html);
     S.aiMem.shownProducts = show;
     // tarjetas con foto: siempre al preguntar por combos
     S._cardsOK = true;
     var recs = show.map(function(p){
-      var has = (st[String(p.cod)] || 0) > 0;
       var ic = comboImgCod(p.descripcion);
       if (ic) p._imgCod = ic; else p._imgLogo = true;
-      return { p: p, reasons: ['Combo'], st: has ? 1 : 0, hasStockData: true };
+      return { p: p, reasons: ['Combo'], st: 1, hasStockData: true };
     });
     recommendBubble(recs, 'Te paso las tarjetas con foto y precio \u2728');
   }
