@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-08-v107-combos-disponibles';
+  var SITE_VERSION = 'sv-2026-10-08-v108-solo-codigos-combo';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -9352,24 +9352,16 @@ function answer(q){
     getAllProductsRaw().forEach(function(p){ _seenC[String(p.cod)] = 1; });
     var list = getAllProductsRaw().concat(AI_CUSTOM_PRODUCTS.filter(function(p){ return !_seenC[String(p.cod)]; }));
     var cb = [];
-    var extras = [];
     list.forEach(function(p){
       if (!p || !p.descripcion) return;
       var cod = norm(String(p.cod||''));
       if (/combo\s*6/.test(cod)) return; // Combo 6 agotado: no informarlo como disponible
-      var d = norm(p.descripcion);
-      if (d.indexOf('combo') !== -1 || cod.indexOf('combo') !== -1) cb.push(p);
+      // v108: combo = SOLO lo que dice 'combo' en el CODIGO (Combo 1..8, cuotas).
+      // Los sets/duos del catalogo NO son combos: son oferta de catalogo (entrega
+      // por fechas de campana), nunca se ofrecen como combos.
+      if (cod.indexOf('combo') !== -1) cb.push(p);
     });
-    if (cb.length < 4){
-      // combos con otro nombre habitual (set/duo de 2 o 3 productos), solo con stock
-      list.forEach(function(p){
-        if (!p || !p.descripcion) return;
-        var d = norm(p.descripcion);
-        var isMulti = /\bc\/u\b|c\/u|\+|\bx\s?2\b|\bx\s?3\b/.test(d);
-        if (/\bset\b|\bduo\b/.test(d) && isMulti && cb.indexOf(p) === -1 && comboStockOf(p) > 0) extras.push(p);
-      });
-    }
-    var all = cb.concat(extras);
+    var all = cb;
     if (!all.length){
       botSay('Ahora no tengo combos publicados en el cat\u00e1logo \ud83d\ude15<br><br>Si me dec\u00eds qu\u00e9 productos te interesan (perfumes, cremas, maquillaje), te digo lo que hay con stock para entrega inmediata o lo que se puede encargar por cat\u00e1logo.');
       return;
@@ -9405,7 +9397,7 @@ function answer(q){
     // v107: listar SOLO los combos disponibles (stock real > 0)
     var avail = all.filter(function(p){ return comboStockOf(p) > 0; });
     if (!avail.length){
-      botSay('Se me agotaron los combos por ahora \ud83d\ude4f<br><br>Puedo mostrarte perfumes y cremas con stock para entrega inmediata, o lo que se encarga por cat\u00e1logo: lo encargo antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. \u00bfQu\u00e9 te interesa?');
+      botSay('Se me agotaron los combos para entrega inmediata \ud83d\ude4f<br><br>Puedo mostrarte perfumes y cremas con stock ya, o la oferta del cat\u00e1logo: se encarga antes del ' + CAMPAIGN.cierre + ' y llega ' + CAMPAIGN.entrega + '. \u00bfQu\u00e9 te interesa?');
       return;
     }
     var MAX = 8;
