@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-08-v108-solo-codigos-combo';
+  var SITE_VERSION = 'sv-2026-10-08-v109-salir-pregunta';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -3096,12 +3096,19 @@ window.addEventListener('error', function(e){
   history.replaceState({ mq: 'base' }, '');
   history.pushState({ mq: 'home' }, '');
   window.addEventListener('popstate', function() {
+    if (window._mqExiting) { window._mqExiting = false; try { history.back(); } catch(e){} return; }
     var dirty = _mqOverlaysOpen() || currentFrame() !== 'home';
     if (dirty) {
       _mqGoHome();
       history.pushState({ mq: 'home' }, '');
+    } else {
+      // v109: en el Home pregunta si quedarse en Monique o salir
+      var m = document.getElementById('exit-confirm');
+      if (m && m.style.display !== 'flex') {
+        m.style.display = 'flex';
+        history.pushState({ mq: 'home' }, '');
+      }
     }
-    // si ya estaba en el Home limpio, dejar salir de la pagina
   });
 
   function showSection(name) {
@@ -9634,35 +9641,25 @@ window.MoniAI = {
 <div id="exit-confirm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;align-items:center;justify-content:center;padding:20px;">
   <div style="background:#fff;border-radius:16px;max-width:340px;width:100%;padding:24px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.3);">
     <div style="font-size:2.2rem;">👋</div>
-    <h3 style="margin:8px 0 6px;font-size:1.15rem;color:#1f2937;">¿Seguro que querés salir?</h3>
-    <p style="margin:0 0 18px;font-size:0.9rem;color:#6b7280;">Si vas hacia atrás, la página se va a cerrar. Podés perder lo que estabas viendo.</p>
+    <h3 style="margin:8px 0 6px;font-size:1.15rem;color:#1f2937;">¿Querés quedarte en Monique?</h3>
+    <p style="margin:0 0 18px;font-size:0.9rem;color:#6b7280;">Podés seguir viendo el catálogo o salir de la aplicación.</p>
     <button onclick="mqStay()" style="width:100%;padding:13px;margin-bottom:10px;background:#ae056c;color:#fff;border:none;border-radius:12px;font-weight:700;font-size:0.95rem;cursor:pointer;">Quedarme en Monique 💖</button>
     <button onclick="mqExit()" style="width:100%;padding:11px;background:#f3f4f6;color:#374151;border:none;border-radius:12px;font-weight:600;font-size:0.9rem;cursor:pointer;">Salir</button>
   </div>
 </div>
 <script>
-(function(){
-  var armed = false;
-  function arm(){ try { history.pushState({mqTrap:1}, '', location.href); armed = true; } catch(e){} }
-  arm();
-  window.addEventListener('popstate', function(ev){
-    if (!armed) return;
-    arm(); // re-armar para la proxima vez
-    try {
-      var m = document.getElementById('exit-confirm');
-      if (m) m.style.display = 'flex';
-    } catch(e){}
-  });
-  window.mqStay = function(){
-    var m = document.getElementById('exit-confirm');
-    if (m) m.style.display = 'none';
-  };
-  window.mqExit = function(){
-    armed = false;
-    mqStay();
-    try { history.back(); } catch(e){}
-  };
-})();
+// v109: atras en el Home = preguntar quedarse o salir. "Salir" cierra la app/navegador.
+window.mqStay = function(){
+  var m = document.getElementById('exit-confirm');
+  if (m) m.style.display = 'none';
+};
+window.mqExit = function(){
+  mqStay();
+  window._mqExiting = true;
+  try { window.close(); } catch(e){}
+  setTimeout(function(){ try { history.back(); } catch(e){} }, 200);
+  setTimeout(function(){ try { window.close(); } catch(e){} }, 500);
+};
 </script>
 <button id="mq-install-btn" onclick="mqDoInstall()" style="display:none;position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:99999;background:#C10069;color:#fff;border:none;border-radius:24px;padding:12px 22px;font-size:0.95rem;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,0.35);cursor:pointer;">📲 Instalar app</button>
 <script>
