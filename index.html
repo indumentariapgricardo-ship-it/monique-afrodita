@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-10-v114-btn-izquierda-pdf';
+  var SITE_VERSION = 'sv-2026-10-10-v115-sin-pdf-en-barra';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -212,12 +212,6 @@ window.addEventListener('error', function(e){
     <button class="bar-btn" id="bar-admin">
       <span class="icon">⚙️</span>
       <span>Administración</span>
-    </button>
-  </div>
-  <div class="bar-btn-wrap">
-    <button class="bar-btn" id="bar-pdf-load" onclick="mqOpenPdfUpload()">
-      <span class="icon">📄</span>
-      <span>PDF</span>
     </button>
   </div>
   <!-- Hidden buttons kept for JS compatibility -->
