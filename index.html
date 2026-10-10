@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-10-v115-sin-pdf-en-barra';
+  var SITE_VERSION = 'sv-2026-10-10-v116-barra-consultar-precio';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -183,38 +183,33 @@ window.addEventListener('error', function(e){
 <!-- Fixed Fuchsia Bottom Bar -->
 <div id="bottom-bar">
   <div class="bar-btn-wrap">
+    <button class="bar-btn" id="bar-scan">
+      <span class="icon">📷</span>
+      <span>Consultar precio</span>
+    </button>
+  </div><div class="bar-btn-wrap">
     <button class="bar-btn" id="bar-home" disabled>
       <span class="icon">↩</span>
       <span>Atrás</span>
     </button>
-  </div>
-  <div class="bar-btn-wrap">
-    <button class="bar-btn" id="bar-cart">
-      <span class="icon">🛒</span>
-      <span>Carrito</span>
-      <span class="badge" id="bar-cart-badge" style="display:none;">0</span>
-    </button>
-  </div>
-  <div class="bar-btn-wrap">
-    <button class="bar-btn" id="bar-scan">
-      <span class="icon">📷</span>
-      <span>Escanear</span>
-    </button>
-  </div>
-  <div class="bar-btn-wrap">
+  </div><div class="bar-btn-wrap">
     <button class="bar-btn" id="bar-venta" style="background:#16a34a;border-radius:8px;">
       <span class="icon" style="font-size:1.5rem;font-weight:800;">$</span>
       <span>Venta</span>
       <span class="badge" id="bar-venta-badge" style="display:none;background:#ef4444;color:#fff;">0</span>
     </button>
-  </div>
-  <div class="bar-btn-wrap">
+  </div><div class="bar-btn-wrap">
+    <button class="bar-btn" id="bar-cart">
+      <span class="icon">🛒</span>
+      <span>Carrito</span>
+      <span class="badge" id="bar-cart-badge" style="display:none;">0</span>
+    </button>
+  </div><div class="bar-btn-wrap">
     <button class="bar-btn" id="bar-admin">
       <span class="icon">⚙️</span>
       <span>Administración</span>
     </button>
-  </div>
-  <!-- Hidden buttons kept for JS compatibility -->
+  </div><!-- Hidden buttons kept for JS compatibility -->
   <button id="bar-add" style="display:none;"></button>
   <button id="bar-pdf" style="display:none;"></button>
   <button id="bar-pedidos" style="display:none;"></button>
