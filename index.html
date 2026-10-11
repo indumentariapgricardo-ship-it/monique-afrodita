@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-10-v116-barra-consultar-precio';
+  var SITE_VERSION = 'sv-2026-10-11-v117-sync-fotos-github-fallback';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -684,6 +684,41 @@ window.addEventListener('error', function(e){
   let pendingAfterLoad = { home: null, catalogo: null, buscador: null, admin: null, cuotas: null, registro: null };
   let lastProductsUpdate = null;
   const CATALOGO_API = 'https://elio-7bf23562.base44.app/functions/gestionCatalogoV2';
+  // v117: sube a la nube las fotos locales que falten (recupera celu viejo)
+  function _syncMissingPhotosToCloud() {
+    try {
+      var local = JSON.parse(localStorage.getItem('monique_cuotas_images_v2') || '{}');
+      var done = JSON.parse(localStorage.getItem('monique_img_sync_done_v2') || '[]');
+      var toSync = Object.keys(local).filter(function(c) {
+        return String(local[c]).indexOf('data:') === 0 && done.indexOf(String(c)) === -1;
+      });
+      if (!toSync.length) return;
+      fetch('https://solene-aa3bc6a5.base44.app/functions/imageManager', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'getAll' })
+      }).then(function(r){ return r.json(); }).then(function(cloud) {
+        var cloudKeys = (cloud && cloud.images) ? Object.keys(cloud.images) : [];
+        var missing = toSync.filter(function(c){ return cloudKeys.indexOf(String(c)) === -1; });
+        console.log('Sync fotos: ' + missing.length + ' por subir');
+        var i = 0;
+        function next() {
+          if (i >= missing.length) return;
+          var batch = missing.slice(i, i+4); i += 4;
+          Promise.all(batch.map(function(code) {
+            return fetch('https://solene-aa3bc6a5.base44.app/functions/imageManager', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'save', cod: String(code), dataUrl: local[code] })
+            }).then(function(){ done.push(String(code)); }).catch(function(){});
+          })).then(function() {
+            try { localStorage.setItem('monique_img_sync_done_v2', JSON.stringify(done)); } catch(e) {}
+            next();
+          });
+        }
+        next();
+      }).catch(function(e){ console.log('sync getAll err', e); });
+    } catch(e) {}
+  }
+  setTimeout(_syncMissingPhotosToCloud, 5000);
   var _catalogoVersion = null;
 
   // Fetch catalog from backend (shared across all devices)
