@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-15-v122-venta-busca-nombre';
+  var SITE_VERSION = 'sv-2026-10-15-v123-venta-sin-productos-m';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -1263,6 +1263,24 @@ window.addEventListener('error', function(e){
   function clearLookupFallback() {
     if (_lookupFallbackTimer) { clearTimeout(_lookupFallbackTimer); _lookupFallbackTimer = null; }
   }
+  function _isMaterialCode(code) {
+    code = String(code);
+    try {
+      var _src = null;
+      try { _src = JSON.parse(localStorage.getItem('monique_products') || 'null'); } catch (e2) {}
+      if (!_src || !_src.length) { _src = (typeof PDF_PRODUCTS !== 'undefined') ? PDF_PRODUCTS : []; }
+      for (var i = 0; i < (_src || []).length; i++) {
+        if (String(_src[i].cod) === code) {
+          return String(_src[i].tipo || _src[i].marker || 'v').toLowerCase() === 'm';
+        }
+      }
+      var customs = JSON.parse(localStorage.getItem('monique_custom_products') || '[]');
+      for (var j = 0; j < (customs || []).length; j++) {
+        if (String((customs[j] || {}).c) === code) return String((customs[j] || {}).marker || 'v').toLowerCase() === 'm';
+      }
+    } catch (e) {}
+    return false;
+  }
   function _normTxt(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
   function _fmtPriceLocal(v) { try { return Math.round(v).toLocaleString('es-AR'); } catch (e) { return Math.round(v); } }
   function manualLookup(value) {
@@ -1282,17 +1300,23 @@ window.addEventListener('error', function(e){
       try { _src = JSON.parse(localStorage.getItem('monique_products') || 'null'); } catch (e2) {}
       if (!_src || !_src.length) { _src = (typeof PDF_PRODUCTS !== 'undefined') ? PDF_PRODUCTS : []; }
       (_src || []).forEach(function(p) {
-        if (p && p.descripcion) all.push({ code: String(p.cod), name: String(p.descripcion || ''), price: Number(p.precio) || 0 });
+        if (p && p.descripcion && String(p.tipo || p.marker || 'v').toLowerCase() !== 'm') all.push({ code: String(p.cod), name: String(p.descripcion || ''), price: Number(p.precio) || 0 });
       });
     } catch (e) {}
     try {
       var customs = JSON.parse(localStorage.getItem('monique_custom_products') || '[]');
       (customs || []).forEach(function(cp) {
-        if (cp && cp.c && String(cp.c).indexOf('CP') !== 0) all.push({ code: String(cp.c), name: String(cp.n || ''), price: Number(cp.v) || 0 });
+        if (cp && cp.c && String(cp.c).indexOf('CP') !== 0 && String(cp.marker || 'v').toLowerCase() !== 'm') all.push({ code: String(cp.c), name: String(cp.n || ''), price: Number(cp.v) || 0 });
       });
     } catch (e) {}
     for (var i = 0; i < all.length; i++) {
-      if (all[i].code === value) { lookupCode(value); return; }
+      if (all[i].code === value) {
+        if (_isMaterialCode(value) && typeof ventaMode !== 'undefined' && ventaMode) {
+          alert('Ese producto es solo para consejeras, no se vende en Venta.');
+          return;
+        }
+        lookupCode(value); return;
+      }
     }
     if (!all.length) { lookupCode(value); return; }
     var q = _normTxt(value);
@@ -1800,6 +1824,18 @@ window.addEventListener('error', function(e){
 
     // VENTA MODE: ask quantity, add to venta cart, keep scanning
     if (typeof ventaMode !== 'undefined' && ventaMode) {
+      if (product && product.name && product.price > 0 && _isMaterialCode(product.code)) {
+        cancelScannerAutoRestart();
+        document.getElementById('scanner-result').style.display = 'flex';
+        document.getElementById('scanner-product-info').innerHTML =
+          '<div style="padding:16px;text-align:center;">'
+          + '<div style="font-size:1.8rem;margin-bottom:8px;">🔒</div>'
+          + '<div style="font-weight:700;color:#1f2937;font-size:0.95rem;margin-bottom:4px;">' + product.name + '</div>'
+          + '<div style="font-size:0.82rem;color:#6b7280;margin-bottom:14px;">Es un producto de consejera, no se vende en Venta.</div>'
+          + '<button onclick="closeScanner()" style="padding:10px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:10px;font-weight:600;">Entendido</button>'
+          + '</div>';
+        return;
+      }
       if (product && product.name && product.price > 0) {
         var displayPrice = (ventaTipo === 'consejera') ? getConsejeraPrice(product) : product.price;
         var confirmColor = (ventaTipo === 'consejera') ? '#2563eb' : '#16a34a';
@@ -3743,7 +3779,7 @@ window.addEventListener('error', function(e){
     try {
       var customs = JSON.parse(localStorage.getItem('monique_custom_products') || '[]');
       (customs || []).forEach(function(cp) {
-        if (cp && cp.c && String(cp.c).indexOf('CP') !== 0) all.push({ code: String(cp.c), name: String(cp.n || ''), price: Number(cp.v) || 0 });
+        if (cp && cp.c && String(cp.c).indexOf('CP') !== 0 && String(cp.marker || 'v').toLowerCase() !== 'm') all.push({ code: String(cp.c), name: String(cp.n || ''), price: Number(cp.v) || 0 });
       });
     } catch (e) {}
     return all;
@@ -3786,6 +3822,7 @@ window.addEventListener('error', function(e){
     value = String(value || '').trim();
     if (!value) return;
     var all = _ventaAllProducts();
+    if (_isMaterialCode(value)) { alert('Ese producto es solo para consejeras, no se vende en Venta.'); document.getElementById('venta-manual-input').value = ''; return; }
     var exact = null;
     for (var i = 0; i < all.length; i++) { if (all[i].code === value) { exact = all[i]; break; } }
     if (exact) {
