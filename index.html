@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-15-v121-busqueda-nombre';
+  var SITE_VERSION = 'sv-2026-10-15-v122-venta-busca-nombre';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -296,9 +296,10 @@ window.addEventListener('error', function(e){
       <div style="padding:12px 16px;background:#f0fdf4;border-bottom:1px solid #d1fae5;flex-shrink:0;">
         <button onclick="openVentaScanner()" style="width:100%;padding:14px;background:#16a34a;color:#fff;border:none;border-radius:12px;font-weight:700;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">📷 Escanear producto</button>
         <div style="display:flex;gap:8px;margin-top:8px;">
-          <input type="text" id="venta-manual-input" placeholder="o ingresar codigo..." style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;" onkeydown="if(event.key==='Enter'){ventaAddManual(this.value);this.value='';'}">
-          <button onclick="ventaAddManual(document.getElementById('venta-manual-input').value);document.getElementById('venta-manual-input').value='';" style="padding:10px 16px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;font-weight:600;">+ Agregar</button>
+          <input type="text" id="venta-manual-input" placeholder="código o nombre del producto..." style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;" oninput="ventaNameSearch(this.value)" onkeydown="if(event.key==='Enter'){ventaAddFromInput(this.value)}">
+          <button onclick="ventaAddFromInput(document.getElementById('venta-manual-input').value)" style="padding:10px 16px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:0.85rem;cursor:pointer;font-weight:600;">+ Agregar</button>
         </div>
+        <div id="venta-name-results" style="margin-top:8px;"></div>
       </div>
       <div id="venta-items" style="flex:1;overflow-y:auto;padding:12px 16px;min-height:120px;">
         <div id="venta-empty" style="text-align:center;padding:40px 20px;color:#9ca3af;">
@@ -3729,6 +3730,83 @@ window.addEventListener('error', function(e){
     setTimeout(function() { loadFrame('cuotas', function() {}); }, 1000);
   }
 
+  function _ventaAllProducts() {
+    var all = [];
+    try {
+      var _src = null;
+      try { _src = JSON.parse(localStorage.getItem('monique_products') || 'null'); } catch (e2) {}
+      if (!_src || !_src.length) { _src = (typeof PDF_PRODUCTS !== 'undefined') ? PDF_PRODUCTS : []; }
+      (_src || []).forEach(function(p) {
+        if (p && p.descripcion) all.push({ code: String(p.cod), name: String(p.descripcion || ''), price: Number(p.precio) || 0 });
+      });
+    } catch (e) {}
+    try {
+      var customs = JSON.parse(localStorage.getItem('monique_custom_products') || '[]');
+      (customs || []).forEach(function(cp) {
+        if (cp && cp.c && String(cp.c).indexOf('CP') !== 0) all.push({ code: String(cp.c), name: String(cp.n || ''), price: Number(cp.v) || 0 });
+      });
+    } catch (e) {}
+    return all;
+  }
+  function _ventaNorm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+  var _ventaSearchTimer = null;
+  function ventaNameSearch(value) {
+    var res = document.getElementById('venta-name-results');
+    value = String(value || '').trim();
+    if (value.length < 2) { res.innerHTML = ''; return; }
+    if (_ventaSearchTimer) clearTimeout(_ventaSearchTimer);
+    _ventaSearchTimer = setTimeout(function() {
+      var all = _ventaAllProducts();
+      var q = _ventaNorm(value);
+      var matches = all.filter(function(p) { return _ventaNorm(p.name).indexOf(q) !== -1; });
+      matches.sort(function(a, b) {
+        var aS = _ventaNorm(a.name).indexOf(q) === 0 ? 0 : 1;
+        var bS = _ventaNorm(b.name).indexOf(q) === 0 ? 0 : 1;
+        return aS - bS;
+      });
+      if (!matches.length) { res.innerHTML = ''; return; }
+      var html = '';
+      matches.slice(0, 20).forEach(function(p, idx) {
+        html += '<button onclick="ventaPickName(\'' + p.code + '\', \'venta-idx-' + idx + '\')" data-idx="venta-idx-' + idx + '" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 12px;margin-bottom:5px;background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;text-align:left;">'
+          + '<span><span style="font-weight:700;font-size:0.85rem;color:#1f2937;display:block;">' + p.name + '</span><span style="font-size:0.72rem;color:#9ca3af;">Cod ' + p.code + '</span></span>'
+          + '<span style="font-weight:800;color:#db2777;font-size:0.85rem;">$ ' + (Math.round(p.price).toLocaleString('es-AR')) + '</span>'
+          + '</button>';
+      });
+      res.innerHTML = html;
+      window._ventaMatches = matches;
+    }, 250);
+  }
+  function ventaPickName(code, btnIdx) {
+    var inp = document.getElementById('venta-manual-input');
+    inp.value = '';
+    document.getElementById('venta-name-results').innerHTML = '';
+    ventaAddManual(code);
+  }
+  function ventaAddFromInput(value) {
+    value = String(value || '').trim();
+    if (!value) return;
+    var all = _ventaAllProducts();
+    var exact = null;
+    for (var i = 0; i < all.length; i++) { if (all[i].code === value) { exact = all[i]; break; } }
+    if (exact) {
+      document.getElementById('venta-manual-input').value = '';
+      document.getElementById('venta-name-results').innerHTML = '';
+      ventaAddManual(exact.code);
+      return;
+    }
+    var q = _ventaNorm(value);
+    var matches = all.filter(function(p) { return _ventaNorm(p.name).indexOf(q) !== -1; });
+    if (matches.length === 1) {
+      document.getElementById('venta-manual-input').value = '';
+      document.getElementById('venta-name-results').innerHTML = '';
+      ventaAddManual(matches[0].code);
+      return;
+    }
+    if (matches.length > 1) { ventaNameSearch(value); document.getElementById('venta-manual-input').focus(); return; }
+    document.getElementById('venta-manual-input').value = '';
+    document.getElementById('venta-name-results').innerHTML = '';
+    ventaAddManual(value);
+  }
   function ventaAddManual(code) {
     code = String(code).trim();
     if (!code) return;
