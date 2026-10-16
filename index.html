@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-10-15-v123-venta-sin-productos-m';
+  var SITE_VERSION = 'sv-2026-10-15-v124-venta-sin-m-fix';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -3773,7 +3773,7 @@ window.addEventListener('error', function(e){
       try { _src = JSON.parse(localStorage.getItem('monique_products') || 'null'); } catch (e2) {}
       if (!_src || !_src.length) { _src = (typeof PDF_PRODUCTS !== 'undefined') ? PDF_PRODUCTS : []; }
       (_src || []).forEach(function(p) {
-        if (p && p.descripcion) all.push({ code: String(p.cod), name: String(p.descripcion || ''), price: Number(p.precio) || 0 });
+        if (p && p.descripcion && String(p.tipo || p.marker || 'v').toLowerCase() !== 'm') all.push({ code: String(p.cod), name: String(p.descripcion || ''), price: Number(p.precio) || 0 });
       });
     } catch (e) {}
     try {
