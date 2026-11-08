@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-11-07-v136-etiquetas-solo-admin';
+  var SITE_VERSION = 'sv-2026-11-08-v137-instalar-pwa';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -10208,6 +10208,80 @@ window.mqExit = function(){
   b.textContent = '✔ Catálogo listo';
   b.style.background = '#16a34a';
   setTimeout(function(){ if (b && b.parentNode) b.parentNode.removeChild(b); }, 2500);
+})();
+</script>
+
+<!-- Banner de instalacion PWA (solo si no esta instalada) -->
+<div id="pwa-install-banner" style="display:none;position:fixed;left:10px;right:10px;bottom:14px;z-index:9997;background:#fff;border:1px solid #f3d5e4;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px 14px;align-items:center;gap:10px;">
+  <div style="width:38px;height:38px;border-radius:10px;background:#fce4ec;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;">📲</div>
+  <div style="flex:1;min-width:0;">
+    <div style="font-size:0.85rem;font-weight:700;color:#1f2937;line-height:1.2;">Instalá la app de Monique</div>
+    <div id="pwa-install-sub" style="font-size:0.72rem;color:#6b7280;margin-top:2px;line-height:1.25;">Accedé más rápido desde tu pantalla de inicio</div>
+  </div>
+  <button id="pwa-install-btn" style="background:#d32f75;color:#fff;border:none;border-radius:9px;padding:9px 14px;font-size:0.8rem;font-weight:700;cursor:pointer;flex-shrink:0;">Instalar</button>
+  <button id="pwa-install-close" aria-label="Cerrar" style="background:none;border:none;color:#9ca3af;font-size:1.2rem;cursor:pointer;padding:0 2px;flex-shrink:0;">&times;</button>
+</div>
+<style>
+  @media (display-mode: standalone) { #pwa-install-banner { display:none !important; } }
+</style>
+<script>
+(function(){
+  var banner = document.getElementById('pwa-install-banner');
+  if (!banner) return;
+  var KEY = 'monique_pwa_install_dismissed_at';
+  var DIAS = 7;
+
+  function esStandalone() {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  }
+  function descartadoHacePoco() {
+    var t = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (!t) return false;
+    return (Date.now() - t) < DIAS * 24 * 3600 * 1000;
+  }
+  function mostrar() {
+    if (esStandalone() || descartadoHacePoco()) return;
+    banner.style.display = 'flex';
+  }
+  function ocultar() { banner.style.display = 'none'; }
+
+  var deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    mostrar();
+  });
+  window.addEventListener('appinstalled', function() {
+    ocultar();
+    try { localStorage.setItem(KEY, String(Date.now() + 3650 * 24 * 3600 * 1000)); } catch(e) {}
+  });
+
+  var esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (esIOS) {
+    var sub = document.getElementById('pwa-install-sub');
+    if (sub) sub.innerHTML = 'Tocá Compartir ⬆️ y después “Agregar a inicio”';
+    var btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.textContent = 'Cómo';
+  }
+
+  document.getElementById('pwa-install-btn').addEventListener('click', function() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function(){ deferredPrompt = null; });
+      return;
+    }
+    if (esIOS) {
+      alert('Para instalar Monique:\n\n1. Tocá el botón Compartir (el cuadradito con la flecha) en Safari.\n2. Bajá y elegí “Agregar a inicio”.\n3. Tocá “Agregar”.');
+      return;
+    }
+    alert('Para instalar: abrí el menú del navegador (los tres puntos) y elegí “Instalar app” o “Agregar a pantalla de inicio”.');
+  });
+  document.getElementById('pwa-install-close').addEventListener('click', function() {
+    ocultar();
+    try { localStorage.setItem(KEY, String(Date.now())); } catch(e) {}
+  });
+
+  setTimeout(mostrar, 2500);
 })();
 </script>
 </body>
