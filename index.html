@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-11-11-v138-avisos-ingresos';
+  var SITE_VERSION = 'sv-2026-11-11-v139-barcode-opcional';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -488,6 +488,10 @@ window.addEventListener('error', function(e){
         <option value="name">Código + nombre (actual)</option>
         <option value="price">Precio (código de barras + precio)</option>
       </select>
+      <select id="label-barcode-select" onchange="setLabelBarcode(this.value==='si')" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;">
+        <option value="si">Con código de barras</option>
+        <option value="no">Sin código de barras</option>
+      </select>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
       <select id="print-cat-filter" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;">
@@ -566,6 +570,10 @@ window.addEventListener('error', function(e){
       <select id="order-label-mode-select" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:0.8rem;">
         <option value="name">Código + nombre</option>
         <option value="price">Precio</option>
+      </select>
+      <select id="order-label-barcode-select" onchange="setLabelBarcode(this.value==='si')" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:0.8rem;flex:1;min-width:150px;">
+        <option value="si">Con código de barras</option>
+        <option value="no">Sin código de barras</option>
       </select>
     </div>
 
@@ -2046,15 +2054,15 @@ window.addEventListener('error', function(e){
             var precio = labelPrice(p) || '';
             html += `
             <div style="border:1.5px solid #333;padding:3px 2px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;height:62px;overflow:hidden;box-sizing:border-box;border-radius:2px;">
-              <svg id="${safeId}" style="display:block;width:100%;max-width:95px;"></svg>
-              <div style="font-size:0.62rem;color:#111;margin-top:2px;font-weight:800;">${precio}</div>
+              ${getLabelBarcode() ? '<svg id="' + safeId + '" style="display:block;width:100%;max-width:95px;"></svg>' : ''}
+              <div style="font-size:${getLabelBarcode() ? '0.62rem' : '0.8rem'};color:#111;margin-top:2px;font-weight:800;">${precio}</div>
             </div>
           `;
           } else {
           html += `
             <div style="border:1.5px solid #333;padding:3px 2px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;height:62px;overflow:hidden;box-sizing:border-box;border-radius:2px;">
-              <svg id="${safeId}" style="display:block;width:100%;max-width:95px;"></svg>
-              <div style="font-size:0.55rem;color:#333;margin-top:1px;font-weight:700;">${p.c}</div>
+              ${getLabelBarcode() ? '<svg id="' + safeId + '" style="display:block;width:100%;max-width:95px;"></svg>' : ''}
+              <div style="font-size:${getLabelBarcode() ? '0.55rem' : '0.7rem'};color:#333;margin-top:1px;font-weight:700;">${p.c}</div>
               <div style="font-size:0.42rem;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">${safeName}</div>
             </div>
           `;
@@ -2087,7 +2095,7 @@ window.addEventListener('error', function(e){
             var top = Math.round((L.y0 + row * L.cellH) * scale);
             var cw = Math.round(L.cellW * scale), ch = Math.round(L.cellH * scale);
             html += '<div style="position:absolute;left:' + left + 'px;top:' + top + 'px;width:' + cw + 'px;height:' + ch + 'px;border:1.5px solid #333;box-sizing:border-box;border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px;">';
-            html += '<svg id="' + safeId + '" style="display:block;width:90%;max-width:' + (cw - 8) + 'px;"></svg>';
+            if (getLabelBarcode()) { html += '<svg id="' + safeId + '" style="display:block;width:90%;max-width:' + (cw - 8) + 'px;"></svg>'; }
             if (getLabelMode() === 'price') {
               html += '<div style="font-size:' + (bigCell ? '1rem' : '0.62rem') + ';color:#111;margin-top:2px;font-weight:800;">' + (labelPrice(p) || '') + '</div>';
             } else {
@@ -2110,6 +2118,7 @@ window.addEventListener('error', function(e){
       container.innerHTML = html;
 
       // Generate barcodes - horizontal, compact (solo los mostrados)
+      if (!getLabelBarcode()) { container.innerHTML = html; return; }
       shownProducts.forEach((p, i) => {
         const safeId = 'bc-' + i + '-' + String(p.c).replace(/[^a-zA-Z0-9]/g, '');
         try {
@@ -2213,6 +2222,21 @@ window.addEventListener('error', function(e){
     window.closePastOrdersPicker();
     window.openOrderLabels({ orderNumber: o.orderNumber, consejera: o.consejeraName, items: items });
   };
+
+  // ===== Incluir o no codigo de barras en la etiqueta =====
+  window._labelBarcode = (localStorage.getItem('monique_label_barcode') === '0') ? false : true;
+  function getLabelBarcode() { return window._labelBarcode !== false; }
+  function setLabelBarcode(v) {
+    window._labelBarcode = !!v;
+    try { localStorage.setItem('monique_label_barcode', v ? '1' : '0'); } catch(e) {}
+    var a = document.getElementById('label-barcode-select');
+    var b = document.getElementById('order-label-barcode-select');
+    if (a) a.value = v ? 'si' : 'no';
+    if (b) b.value = v ? 'si' : 'no';
+    if (document.getElementById('order-labels-overlay') && document.getElementById('order-labels-overlay').style.display === 'flex') {
+      try { updateOrderLabelsTotal(); } catch(e) {}
+    }
+  }
 
   // ===== ETIQUETAS DE UN PEDIDO: elegir cuales se imprimen =====
   window._orderLabelsData = null;
@@ -2501,11 +2525,33 @@ window.addEventListener('error', function(e){
       const bcH = bigLabel ? Math.min(13.5, L.cellH * 0.45) : 9; // mm
       const bcX = x + (L.cellW - bcW) / 2;
       const bcY = y + (bigLabel ? 2 : 1.5);
-      if (dataUrl) {
+      if (getLabelBarcode() && dataUrl) {
         try { doc.addImage(dataUrl, 'PNG', bcX, bcY, bcW, bcH); } catch(e) {}
       }
 
-      if (getLabelMode() === 'price') {
+      if (!getLabelBarcode()) {
+        // ===== Sin código de barras: número y nombre centrados =====
+        var cy = y + L.cellH / 2;
+        if (getLabelMode() === 'price') {
+          var pTxt = labelPrice(p);
+          if (pTxt) {
+            doc.setFontSize(bigLabel ? 15 : (L.isPlanilla ? 9 : 8));
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(0, 0, 0);
+            doc.text(pTxt, x + L.cellW / 2, cy + 1, { align: 'center' });
+          }
+        } else {
+          doc.setFontSize(bigLabel ? 14 : (L.isPlanilla ? 9.5 : 8));
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(0, 0, 0);
+          doc.text(String(p.c), x + L.cellW / 2, cy - 1, { align: 'center' });
+          doc.setFontSize(bigLabel ? 8 : (L.isPlanilla ? 6 : 5.2));
+          doc.setFont(undefined, 'normal');
+          var nm2 = (p.n || '').substring(0, bigLabel ? 45 : 30);
+          var ln2 = doc.splitTextToSize(nm2, L.cellW - 3);
+          doc.text(ln2.slice(0, 2), x + L.cellW / 2, cy + 3.5, { align: 'center' });
+        }
+      } else if (getLabelMode() === 'price') {
         // Modo PRECIO: barcode CODE128 del código + precio (sin número ni nombre)
         var precioTxt = labelPrice(p);
         if (precioTxt) {
