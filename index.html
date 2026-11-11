@@ -31,7 +31,7 @@ window.addEventListener('error', function(e){
 (function(){
   // v68: a prueba de bucles. Recarga como MAXIMO 1 vez por sesion.
   // Si el almacenamiento esta bloqueado (navegadores in-app), NO recarga nunca.
-  var SITE_VERSION = 'sv-2026-11-11-v140-55x44-sin-barras';
+  var SITE_VERSION = 'sv-2026-11-11-v141-55x44-code128';
   try { localStorage.setItem('monique_site_version', SITE_VERSION); } catch(e) {}
   return; // v84: sin recarga de cache-bust; el servidor ya envia no-store
   var key = 'monique_site_version';
@@ -489,8 +489,8 @@ window.addEventListener('error', function(e){
         <option value="price">Precio (código de barras + precio)</option>
       </select>
       <select id="label-barcode-select" onchange="setLabelBarcode(this.value==='si')" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;">
-        <option value="si">Con código de barras</option>
-        <option value="no" selected>Sin código de barras</option>
+        <option value="si" selected>Con código de barras</option>
+        <option value="no">Sin código de barras</option>
       </select>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
@@ -572,8 +572,8 @@ window.addEventListener('error', function(e){
         <option value="price">Precio</option>
       </select>
       <select id="order-label-barcode-select" onchange="setLabelBarcode(this.value==='si')" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:0.8rem;flex:1;min-width:150px;">
-        <option value="si">Con código de barras</option>
-        <option value="no" selected>Sin código de barras</option>
+        <option value="si" selected>Con código de barras</option>
+        <option value="no">Sin código de barras</option>
       </select>
     </div>
 
@@ -2224,7 +2224,7 @@ window.addEventListener('error', function(e){
   };
 
   // ===== Incluir o no codigo de barras en la etiqueta =====
-  window._labelBarcode = (localStorage.getItem('monique_label_barcode') === '1');
+  window._labelBarcode = (localStorage.getItem('monique_label_barcode') !== '0');
   function getLabelBarcode() { return window._labelBarcode !== false; }
   function setLabelBarcode(v) {
     window._labelBarcode = !!v;
